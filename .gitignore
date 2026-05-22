@@ -1,0 +1,61 @@
+# Java / Spring Boot
+*.class
+*.jar
+!**/gradle/wrapper/gradle-wrapper.jar
+*.war
+*.ear
+*.nar
+target/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+.gradle/
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# VS Code
+.vscode/
+
+# Environment variables
+*.env
+*.env.local
+application-local.yml
+app.env
+
+# Node.js / Next.js
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+/tmp/*.log
+
+# AWS
+.aws/
+
+# Redis
+dump.rdb
+appendonly.aof
+
+# Terraform secrets
+infra/terraform.tfvars
+*.tfvars
+
+# Terraform local cache and plan output
+infra/.terraform/
+infra/tfplan
