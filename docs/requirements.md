@@ -31,7 +31,7 @@ RaiseTech AI エンジニアコース **上級編** 学習課題として作成�
 | [「Slack 風」の捉え方](why-slack.md) | 発注意図の解釈・競合比較・スコープ判断の根拠 | ✅ 作成済み |
 | [機能要件書](functional-requirements.md) | F-XX 機能定義・バリデーション・ユースケース | ✅ 作成済み |
 | `docs/screen-design.md` | 画面一覧・ワイヤーフレーム・画面遷移図 | ⏳ 設計フェーズで作成 |
-| `docs/database-design.md` | ER 図・テーブル定義・インデックス | ⏳ 設計フェーズで作成 |
+| [データベース設計書](database-design.md) | ER 図・テーブル定義・インデックス | ✅ 作成済み |
 | `docs/tech-stack.md` | 採用技術・選定理由 | ⏳ 設計フェーズで作成 |
 | `docs/infrastructure.md` | AWS / Render 等の構成図・ネットワーク | ⏳ 設計フェーズで作成 |
 | `docs/realtime-design.md` | WebSocket / STOMP / Redis Pub-Sub 設計 | ⏳ 設計フェーズで作成 |
@@ -103,7 +103,7 @@ RaiseTech AI エンジニアコース **上級編** 学習課題として作成�
 
 ## 6. データベース設計（概要）
 
-`users` → `workspaces` → `workspace_members` → `channels` → `channel_members` → `messages` → `threads` / `reactions` / `mentions` / `attachments` の階層を想定。DM は専用の `dm_rooms` / `dm_messages` または `channels` のサブタイプとして実装するかを設計フェーズで判断する。詳細は **設計フェーズで `docs/database-design.md` を作成** する。
+`users` → `workspaces` → `workspace_members` → `channels` → `channel_members` → `messages` → `threads` / `reactions` / `mentions` / `attachments` の階層を採用。DM は独立テーブル（`dm_rooms` / `dm_members`）として扱い、`messages` は `channel_id` か `dm_room_id` を XOR で持つ。詳細は [データベース設計書](database-design.md) を参照。
 
 ---
 
