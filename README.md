@@ -20,7 +20,7 @@ Slack 風チャット Web アプリケーション。RaiseTech AI エンジニ�
 | [docs/functional-requirements.md](docs/functional-requirements.md) | 機能要件書。F-01〜F-16 の機能定義・バリデーション・ユースケース |
 | [docs/why-slack.md](docs/why-slack.md) | 「Slack 風」発注意図の解釈と競合比較・スコープ判断の根拠 |
 | `docs/screen-design.md` | 画面設計書（設計フェーズで作成予定） |
-| `docs/database-design.md` | データベース設計書（設計フェーズで作成予定） |
+| [docs/database-design.md](docs/database-design.md) | データベース設計書。14 テーブル定義・Flyway 運用ルール・docker-compose 構成方針 |
 | `docs/tech-stack.md` | 技術スタック詳細（設計フェーズで作成予定） |
 | `docs/infrastructure.md` | インフラ構成（設計フェーズ〜実装フェーズで作成予定） |
 | `docs/realtime-design.md` | WebSocket / STOMP / Redis Pub-Sub 設計（設計フェーズで作成予定） |
@@ -78,8 +78,8 @@ Slack 風チャット Web アプリケーション。RaiseTech AI エンジニ�
 | フェーズ | 内容 | 状態 |
 | --- | --- | --- |
 | ① 要件定義 | `why-slack.md` / `requirements.md` / `functional-requirements.md` を作成 | ✅ 完了 |
-| ② 設計 | 画面・DB・技術スタック・インフラ・リアルタイム / キャッシュ設計を確定 | ⏳ |
-| ③ 実装 | バックエンド機能 → フロントエンド → 結合 | ⏳ |
+| ② 設計 | 画面・DB・技術スタック・インフラ・リアルタイム / キャッシュ設計を確定 | 🚧 DB 設計完了、他は未着手 |
+| ③ 実装 | バックエンド機能 → フロントエンド → 結合 | 🚧 backend 雛形＋初期スキーマ着手 |
 | ④ 自動レビュー導入 | 実装が一通り揃った後半で `.github/workflows/claude-code-review.yml` を導入し、複数機能が乗った PR で動作確認（トークン消費を考慮し、最終課題提出時の運用方針は別途判断） | ⏳ |
 | ⑤ デプロイ・運用 | AWS / Render どちらかへの自動デプロイ、Ansible、監視 | ⏳ |
 
@@ -87,9 +87,13 @@ Slack 風チャット Web アプリケーション。RaiseTech AI エンジニ�
 
 ## ローカル開発セットアップ
 
-設計・実装フェーズが進んだ段階で記載する（**TBD**）。
+### 前提
 
-予定ポート割当:
+- Docker / Docker Compose v2
+- Java 21（`./gradlew` 経由なので JDK のインストールだけあれば OK）
+- Node.js（フロントエンドを動かす場合）
+
+### ポート割当
 
 | サーバー | ポート |
 | --- | --- |
@@ -97,3 +101,55 @@ Slack 風チャット Web アプリケーション。RaiseTech AI エンジニ�
 | バックエンド（Spring Boot） | 8080 |
 | データベース（PostgreSQL） | 5432 |
 | キャッシュ / Pub-Sub（Redis） | 6379 |
+
+ポート競合時は **必ず競合プロセスを停止** して指定ポートで起動する（別ポートに逃げない）。`lsof -ti:<ポート> | xargs kill` で停止できる。
+
+### 起動手順
+
+```bash
+# 1. 環境変数ファイルを用意（.env はリポジトリに含めない）
+cp .env.example .env
+
+# 2. PostgreSQL 17 / Redis 7 を起動
+docker compose up -d
+docker compose ps   # 両サービスが healthy になるまで数秒
+
+# 3. バックエンド起動（Flyway が初期スキーマを自動マイグレーション）
+cd backend
+./gradlew bootRun
+# → "Started BackendApplication in X.XXX seconds" が出れば成功
+
+# 4. フロントエンド起動（別ターミナル）
+cd frontend
+npm install
+npm run dev
+```
+
+### スキーマ確認
+
+`./gradlew bootRun` の起動ログに以下が出ていれば Flyway が成功している:
+
+```text
+Successfully applied 1 migration to schema "public", now at version v1
+```
+
+実テーブルの確認:
+
+```bash
+docker compose exec postgres psql -U raisechat -d raisechat -c "\dt"
+# → 14 テーブル + flyway_schema_history = 15 行
+```
+
+### 停止
+
+```bash
+docker compose down       # コンテナ停止、ボリュームは残す
+docker compose down -v    # ボリュームごと削除（DB を初期化したい時）
+```
+
+### マイグレーション運用
+
+- マイグレーションファイルは `backend/src/main/resources/db/migration/V{番号}__{説明}.sql`
+- **マージ済みの V ファイルは編集禁止**（Flyway のチェックサムが変わって起動失敗する）
+- 修正は新しい V ファイルを作る
+- ローカルで修復したい時は `docker compose down -v` で DB ボリュームごと作り直す
