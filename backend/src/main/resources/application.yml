@@ -26,6 +26,12 @@ spring:
 server:
   port: 8080
 
+jwt:
+  # 本番は環境変数 JWT_SECRET で上書きすること。dev デフォルトは HS256 用に 32 バイト以上を確保。
+  secret: ${JWT_SECRET:dev-secret-change-me-this-is-at-least-32-bytes-long}
+  access-ttl-seconds: 900       # 15 分
+  refresh-ttl-seconds: 604800   # 7 日
+
 logging:
   level:
     org.flywaydb: INFO

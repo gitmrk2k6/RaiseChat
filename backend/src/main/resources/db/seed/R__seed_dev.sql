@@ -28,11 +28,11 @@ RESTART IDENTITY CASCADE;
 -- 1. users（5名）
 -- ---------------------------------------------------------------------
 INSERT INTO users (user_id, display_name, password_hash, status_message) VALUES
-  ('keisuke', 'Keisuke Konishi', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', '🎧 集中モード'),
-  ('haruka',  'Haruka Sato',     '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', '出社中'),
-  ('ryo',     'Ryo Yamamoto',    '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'リモートワーク'),
-  ('mika',    'Mika Tanaka',     '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', ''),
-  ('kenta',   'Kenta Suzuki',    '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', '🍵 休憩中');
+  ('keisuke', 'Keisuke Konishi', '$2a$10$Qrga3ByhjqgudYT5iUJp7uyt3OSL7gb0G.6WPIQTMzMYxlsuB5VHS', '🎧 集中モード'),
+  ('haruka',  'Haruka Sato',     '$2a$10$Qrga3ByhjqgudYT5iUJp7uyt3OSL7gb0G.6WPIQTMzMYxlsuB5VHS', '出社中'),
+  ('ryo',     'Ryo Yamamoto',    '$2a$10$Qrga3ByhjqgudYT5iUJp7uyt3OSL7gb0G.6WPIQTMzMYxlsuB5VHS', 'リモートワーク'),
+  ('mika',    'Mika Tanaka',     '$2a$10$Qrga3ByhjqgudYT5iUJp7uyt3OSL7gb0G.6WPIQTMzMYxlsuB5VHS', ''),
+  ('kenta',   'Kenta Suzuki',    '$2a$10$Qrga3ByhjqgudYT5iUJp7uyt3OSL7gb0G.6WPIQTMzMYxlsuB5VHS', '🍵 休憩中');
 
 -- ---------------------------------------------------------------------
 -- 2. workspaces（2件、owner はいずれも keisuke）
