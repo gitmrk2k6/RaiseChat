@@ -18,6 +18,10 @@ spring:
     enabled: true
     baseline-on-migrate: false
     locations: classpath:db/migration
+    # dev プロファイルでのみ適用される R__seed_dev.sql が、他プロファイル起動時に
+    # 「履歴にあるのにファイルが見つからない」検証エラーで落ちないようにする。
+    # 影響範囲を Repeatable migration に限定し、V__ には適用しない。
+    ignore-migration-patterns: "repeatable:missing"
 
 server:
   port: 8080
