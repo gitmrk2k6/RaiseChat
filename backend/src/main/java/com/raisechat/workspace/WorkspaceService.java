@@ -1,5 +1,10 @@
 package com.raisechat.workspace;
 
+import com.raisechat.channel.Channel;
+import com.raisechat.channel.ChannelMember;
+import com.raisechat.channel.ChannelMemberRepository;
+import com.raisechat.channel.ChannelRepository;
+import com.raisechat.channel.ChannelType;
 import com.raisechat.user.User;
 import com.raisechat.user.UserRepository;
 import com.raisechat.workspace.dto.CreateWorkspaceRequest;
@@ -25,6 +30,8 @@ public class WorkspaceService {
 
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final ChannelRepository channelRepository;
+    private final ChannelMemberRepository channelMemberRepository;
     private final UserRepository userRepository;
 
     // created_at / updated_at は DB トリガーで設定するため、INSERT 後に refresh で読み戻す。
@@ -34,10 +41,14 @@ public class WorkspaceService {
     public WorkspaceService(
             WorkspaceRepository workspaceRepository,
             WorkspaceMemberRepository workspaceMemberRepository,
+            ChannelRepository channelRepository,
+            ChannelMemberRepository channelMemberRepository,
             UserRepository userRepository
     ) {
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
+        this.channelRepository = channelRepository;
+        this.channelMemberRepository = channelMemberRepository;
         this.userRepository = userRepository;
     }
 
@@ -56,6 +67,21 @@ public class WorkspaceService {
         member.setUser(owner);
         member.setRole(WorkspaceRole.OWNER);
         workspaceMemberRepository.saveAndFlush(member);
+
+        // ws 作成時に general チャンネル（PUBLIC、作成者をメンバーに登録）を自動作成する。
+        // F-05 メッセージ API が「最低 1 つチャンネルが存在する」前提のため。
+        Channel general = new Channel();
+        general.setWorkspace(ws);
+        general.setName("general");
+        general.setDescription("");
+        general.setType(ChannelType.PUBLIC);
+        general.setCreatedBy(owner);
+        channelRepository.saveAndFlush(general);
+
+        ChannelMember generalMember = new ChannelMember();
+        generalMember.setChannel(general);
+        generalMember.setUser(owner);
+        channelMemberRepository.saveAndFlush(generalMember);
 
         entityManager.refresh(ws);
         return WorkspaceResponse.from(ws);
