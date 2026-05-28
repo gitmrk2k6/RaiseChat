@@ -1,6 +1,8 @@
 package com.raisechat.common.exception;
 
 import com.raisechat.user.exception.UserNotFoundException;
+import com.raisechat.workspace.exception.WorkspaceForbiddenException;
+import com.raisechat.workspace.exception.WorkspaceNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -15,10 +17,9 @@ import java.util.List;
 import java.util.Map;
 
 // auth パッケージの AuthExceptionHandler は Map 形式の旧仕様（後続 Issue で全体移行）。
-// 本ハンドラは新規実装（user 以降）のみに ProblemDetail を適用するため basePackages でスコープを限定。
-// AuthExceptionHandler がグローバルスコープで UserController にも適用されるため、
-// 競合を抑えるよう HIGHEST_PRECEDENCE で本ハンドラを優先する。
-@RestControllerAdvice(basePackages = "com.raisechat.user")
+// 本ハンドラは新規実装（user / workspace）のみに ProblemDetail を適用するため basePackages でホワイトリスト化。
+// auth は basePackages に含めず、AuthExceptionHandler が引き続き処理する。
+@RestControllerAdvice(basePackages = {"com.raisechat.user", "com.raisechat.workspace"})
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class GlobalExceptionHandler {
 
@@ -47,6 +48,26 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
         pd.setType(URI.create(PROBLEM_BASE + "not-found"));
         pd.setTitle("Resource Not Found");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(WorkspaceNotFoundException.class)
+    public ProblemDetail handleWorkspaceNotFound(WorkspaceNotFoundException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
+        pd.setType(URI.create(PROBLEM_BASE + "not-found"));
+        pd.setTitle("Resource Not Found");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(WorkspaceForbiddenException.class)
+    public ProblemDetail handleWorkspaceForbidden(WorkspaceForbiddenException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
+        pd.setType(URI.create(PROBLEM_BASE + "forbidden"));
+        pd.setTitle("Forbidden");
         pd.setDetail(ex.getMessage());
         pd.setInstance(URI.create(req.getRequestURI()));
         return pd;
