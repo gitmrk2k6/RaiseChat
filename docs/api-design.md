@@ -29,7 +29,7 @@ WebSocket / STOMP のメッセージプロトコルは本書のスコープ外�
 | --- | --- |
 | WebSocket / STOMP / Redis Pub-Sub | `docs/realtime-design.md`（後続作成） |
 | F-09〜F-16 の API（マークダウン・添付・リアクション・メンション・検索・通知・招待・管理） | 別 PR で本書に追補予定 |
-| Redis キャッシュキー設計 | `docs/cache-strategy.md`（後続作成） |
+| Redis キャッシュキー設計 | [docs/cache-strategy.md](cache-strategy.md) |
 | 画面遷移・ワイヤーフレーム | `docs/screen-design.md`（後続作成） |
 
 ---
@@ -580,7 +580,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 }
 ```
 
-実装メモ: 直近 N 件は Redis から優先取得する（F-05 非機能要件）。具体の戦略は `docs/cache-strategy.md` で別途定義。
+実装メモ: 直近 N 件は Redis から優先取得する（F-05 非機能要件）。具体の戦略は [docs/cache-strategy.md](cache-strategy.md) で別途定義。
 
 - **エラー**:
   - `401 Unauthorized` / `403 Forbidden` / `404 Not Found`

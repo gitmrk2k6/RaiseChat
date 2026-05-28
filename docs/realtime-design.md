@@ -31,7 +31,7 @@ RaiseChat の **リアルタイム通信プロトコル** を定義する。
 
 | トピック | 担当ドキュメント |
 | --- | --- |
-| Redis を **キャッシュとして使う** 戦略（TTL / key 設計 / 無効化） | `docs/cache-strategy.md`（D-3、後続作成） |
+| Redis を **キャッシュとして使う** 戦略（TTL / key 設計 / 無効化） | [docs/cache-strategy.md](cache-strategy.md) |
 | REST API の URL・スキーマ | [docs/api-design.md](api-design.md) |
 | 画面遷移・WebSocket イベントを UI にどう反映するか | `docs/screen-design.md`（D-4、後続作成） |
 | 実装コード（`WebSocketConfig` 等の Java クラス） | 実装フェーズ（本書は仕様のみ） |
@@ -516,7 +516,7 @@ Redis に流すペイロードは「どこに配信すべきか + 配信内容�
 ### 7.5 D-3 への引き継ぎ
 
 本書では **「ワークスペース単位でチャネルを 1 本切る」** ところまで決める。
-以下は D-3（[docs/cache-strategy.md](cache-strategy.md)、後続作成）で扱う:
+以下は D-3（[docs/cache-strategy.md](cache-strategy.md)）で扱う:
 
 - Redis の **キャッシュ用途**（メッセージ直近 N 件 / 未読カウント / チャンネル一覧）の key 設計と TTL
 - キャッシュ無効化のトリガ（メッセージ送信時にどの key を消すか）

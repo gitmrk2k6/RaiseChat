@@ -21,7 +21,7 @@
 
 | トピック | 担当ドキュメント |
 | --- | --- |
-| Redis キャッシュキー設計・TTL・無効化戦略 | `docs/cache-strategy.md`（後続作成） |
+| Redis キャッシュキー設計・TTL・無効化戦略 | [docs/cache-strategy.md](cache-strategy.md) |
 | WebSocket / STOMP / Redis Pub-Sub 設計 | `docs/realtime-design.md`（後続作成） |
 | API エンドポイント詳細・OpenAPI スキーマ | `docs/api-design.md`（後続作成） |
 | 画面遷移・ワイヤーフレーム | `docs/screen-design.md`（後続作成） |
@@ -704,7 +704,7 @@ CREATE UNIQUE INDEX idx_channels_workspace_name_lower
 
 ## 6. キャッシュ層との境界（Redis との責務分割）
 
-詳細は `docs/cache-strategy.md`（後続作成）で扱う。本書では境界線のみ宣言する。
+詳細は [docs/cache-strategy.md](cache-strategy.md) で扱う。本書では境界線のみ宣言する。
 
 ### 6.1 DB がソース・オブ・トゥルース、Redis は派生キャッシュ
 
