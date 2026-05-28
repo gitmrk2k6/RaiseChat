@@ -172,8 +172,122 @@ cd backend && ./gradlew test
 
 | 状態 |
 | --- |
-| ✅ コア 5 テーブル（users / workspaces / workspace_members / channels / messages）の Entity + Repository |
+| ✅ コア 5 テーブル（users / workspaces / workspace_members / channels / messages）の Entity + Repository（**B-1**） |
+| ✅ シードデータ `R__seed_dev.sql`（**A**） |
+| ✅ 認証 API（refresh_tokens 含む）（**C**） |
+| ✅ 残り 7 テーブル（dm_rooms / dm_members / attachments / reactions / mentions / read_states / workspace_invites）の Entity + Repository、および messages.dm_room_id マッピング（**B-2**） |
 | ✅ Spring Boot が起動可能（validate 通過） |
-| ⬜ 残り 9 テーブル（dm_rooms / dm_members / messages の dm 関連 / attachments / reactions / mentions / read_states / workspace_invites / refresh_tokens）は **B-2** で対応 |
-| ⬜ シードデータ（`R__seed_dev.sql`）は **A** タスクで対応 |
-| ⬜ 認証 API は **C** タスクで対応 |
+| ⬜ 残りの設計書（API 設計 / 画面遷移 等）は **D** タスクで対応 |
+
+---
+
+## 8. パッケージ分割の判断軸（B-2 で追加）
+
+B-2 で 7 テーブル分を追加したとき、「どのフォルダに置くか？」を判断する場面が出てきた。基準は 1 つだけ。
+
+> **そのテーブルは単独で存在できるか？**
+
+| 判定 | 配置 | 例 |
+| --- | --- | --- |
+| **主役**（単独で意味を持つ） | 専用フォルダを新設 | `dm_rooms` → `com.raisechat.dm/` 新設 |
+| **脇役**（必ず親にぶら下がる） | 親と同じフォルダに同居 | `attachments` → `com.raisechat.message/`、`workspace_invites` → `com.raisechat.workspace/` |
+
+判定の仕方:
+
+- DM ルームは、メッセージが 1 件も無くてもルーム自体は存在できる（2 人の関係性として独立）→ **主役**
+- 添付ファイルは、必ず `message_id` が NOT NULL。「どのメッセージの添付か」が無いと存在不可能 → **脇役**
+
+### なぜこの軸でいいのか
+
+コードを読む人が「DM 関連を触りたい」と思ったとき、`dm/` フォルダを開けば全部揃っている、という直感が成立する。脇役を全部独立フォルダにすると `attachment/`, `reaction/`, `mention/`... と細かくなりすぎて、逆にどこに何があるか見えなくなる。
+
+### 進化したときの効果
+
+将来「DM だけ別サービスに切り出したい」みたいな話が出たとき、**主役単位で切ったパッケージがそのまま分離単位の候補**になる。最初から正しく切っておくと、後から動かすコストが小さい。
+
+---
+
+## 9. DB が守れるルールはアプリで書かない（B-2 で追加）
+
+B-2 では `messages` テーブルに **「channel_id か dm_room_id の片方だけ」** という XOR 制約があった。
+
+```sql
+CONSTRAINT messages_channel_or_dm CHECK (
+  (channel_id IS NOT NULL) <> (dm_room_id IS NOT NULL)
+)
+```
+
+> `<>` は「等しくない」。両方 NOT NULL（true vs true）も、両方 NULL（false vs false）もダメ。
+
+**判断**: Java の Entity 側で「両方セットされたら例外を投げる」コードは書かなかった。
+
+### 理由: 二重管理になるから
+
+| ルールの種類 | どこで守る？ |
+| --- | --- |
+| **データの整合性**（NULL不可 / UNIQUE / FK / XOR / CHECK） | **DB 制約**（FK / NOT NULL / UNIQUE / CHECK） |
+| **ビジネスロジック**（送信レートリミット / 禁止語フィルタ） | **アプリ層**（Service / Validator） |
+| **ユーザー入力の即時フィードバック** | フロントエンド + アプリ層（DB はラスト防衛線） |
+
+DB の CHECK 制約は、JPA 経由でも、psql で直接 INSERT しても、別アプリから接続しても **必ず効く**。アプリで二重に書くと「JPA 経由のときだけ守られるルール」になり、整合性が DB / アプリ どちらかにズレる原因になる。
+
+### 今回 DB に任せた具体例
+
+| ルール | DB 側の表現 |
+| --- | --- |
+| messages は channel か dm のどちらか片方 | CHECK 制約 |
+| read_states も channel か dm のどちらか片方 | CHECK 制約 + 部分 UNIQUE INDEX |
+| dm_rooms は user_a < user_b（ペア一意のため順序固定） | CHECK 制約 |
+| attachments.mime_type は 5 値固定 | CHECK 制約（Java 側は String のまま） |
+
+→ Entity は素のマッピングに集中、バリデーションは DB に任せる。
+
+---
+
+## 10. Repository は最小限から始める（B-2 で追加）
+
+B-2 で 7 つの Repository を作ったが、**5 つは中身ゼロ**（`JpaRepository<E, Long>` 継承だけ）。
+
+```java
+public interface AttachmentRepository extends JpaRepository<Attachment, Long> {
+}
+```
+
+これだけでも `save` / `findById` / `findAll` / `deleteById` 等は自動で使える（セクション 4 参照）。
+
+### 検索メソッドを追加したのは 2 つだけ
+
+```java
+// DmRoomRepository
+Optional<DmRoom> findByWorkspaceIdAndUserAIdAndUserBId(Long ..., Long ..., Long ...);
+
+// WorkspaceInviteRepository
+Optional<WorkspaceInvite> findByTokenHash(String tokenHash);
+```
+
+### なぜ最小限にしたか — YAGNI 原則
+
+> **You Aren't Gonna Need It** — 必要になるまで書くな
+
+「将来こんなメソッドが要りそう」で先回りに書くと、実際は呼ばれずに残ったり、API 仕様が固まって書き直しになることが多い。書かないのが正解。
+
+### 「明白な一意検索 2 つだけ」は何が明白なのか
+
+DB スキーマを見れば、**今すぐ使うことが確定している検索**が分かる:
+
+- `workspace_invites.token_hash` に **UNIQUE INDEX** → 招待リンク受諾フローで必ず使う
+- `dm_rooms (workspace_id, user_a_id, user_b_id)` に **UNIQUE INDEX** → 「この 2 人の DM ルーム既にある？」で必ず使う
+
+**UNIQUE INDEX が張られている = 設計者が一意検索 API を想定している証拠**。先回りで書いても無駄になりません。
+
+逆に「reactions をメッセージ ID で集計する」のような検索は、集計方法（COUNT? GROUP BY emoji?）が API 仕様次第で変わる。今書くと書き直しリスクが高いので空のまま。
+
+### 一般則
+
+| 状況 | Repository に書く？ |
+| --- | --- |
+| UNIQUE INDEX が張られているキーでの一意検索 | **書く**（仕様確定済み） |
+| 「使うかも」レベルの想像メソッド | **書かない** |
+| API 実装時に必要になったメソッド | **そのとき書く** |
+
+→ Entity の流儀（`@Getter @Setter` 並び等）は型で揃えるけど、Repository のメソッドは要件が出るまで増やさない、という線引き。
