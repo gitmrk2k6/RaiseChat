@@ -3,7 +3,6 @@ package com.raisechat.message;
 import com.raisechat.channel.Channel;
 import com.raisechat.dm.DmRoom;
 import com.raisechat.user.User;
-import com.raisechat.workspace.Workspace;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -20,11 +19,11 @@ import lombok.Setter;
 import java.time.OffsetDateTime;
 
 @Entity
-@Table(name = "messages")
+@Table(name = "read_states")
 @Getter
 @Setter
 @NoArgsConstructor
-public class Message {
+public class ReadState {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -32,8 +31,8 @@ public class Message {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "workspace_id", nullable = false)
-    private Workspace workspace;
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "channel_id")
@@ -43,26 +42,13 @@ public class Message {
     @JoinColumn(name = "dm_room_id")
     private DmRoom dmRoom;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "parent_message_id")
-    private Message parent;
-
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "author_user_id", nullable = false)
-    private User author;
+    @JoinColumn(name = "last_read_message_id", nullable = false)
+    private Message lastReadMessage;
 
-    @Column(name = "body", nullable = false, columnDefinition = "TEXT")
-    private String body;
-
-    @Column(name = "edited_at")
-    private OffsetDateTime editedAt;
-
-    @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
-    private OffsetDateTime createdAt;
+    @Column(name = "last_read_at", nullable = false, insertable = false, updatable = false)
+    private OffsetDateTime lastReadAt;
 
     @Column(name = "updated_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime updatedAt;
-
-    @Column(name = "deleted_at")
-    private OffsetDateTime deletedAt;
 }

@@ -1,7 +1,5 @@
-package com.raisechat.message;
+package com.raisechat.dm;
 
-import com.raisechat.channel.Channel;
-import com.raisechat.dm.DmRoom;
 import com.raisechat.user.User;
 import com.raisechat.workspace.Workspace;
 import jakarta.persistence.Column;
@@ -20,11 +18,11 @@ import lombok.Setter;
 import java.time.OffsetDateTime;
 
 @Entity
-@Table(name = "messages")
+@Table(name = "dm_rooms")
 @Getter
 @Setter
 @NoArgsConstructor
-public class Message {
+public class DmRoom {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -35,33 +33,16 @@ public class Message {
     @JoinColumn(name = "workspace_id", nullable = false)
     private Workspace workspace;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "channel_id")
-    private Channel channel;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "dm_room_id")
-    private DmRoom dmRoom;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "parent_message_id")
-    private Message parent;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_a_id", nullable = false)
+    private User userA;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "author_user_id", nullable = false)
-    private User author;
-
-    @Column(name = "body", nullable = false, columnDefinition = "TEXT")
-    private String body;
-
-    @Column(name = "edited_at")
-    private OffsetDateTime editedAt;
+    @JoinColumn(name = "user_b_id", nullable = false)
+    private User userB;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
-
-    @Column(name = "updated_at", nullable = false, insertable = false, updatable = false)
-    private OffsetDateTime updatedAt;
 
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
