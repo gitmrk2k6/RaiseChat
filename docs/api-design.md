@@ -178,6 +178,9 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 | 25 | POST | `/api/workspaces/{wsId}/invites` | 必要（OWNER） | F-15 ワークスペース招待リンク発行 |
 | 26 | POST | `/api/invites/{token}/accept` | 必要 | F-15 招待受諾（呼び出しユーザーが参加） |
 | 27 | DELETE | `/api/workspaces/{wsId}/invites/{inviteId}` | 必要（OWNER） | F-15 招待リンク無効化 |
+| 28 | POST | `/api/channels/{id}/invites` | 必要（チャンネルメンバー） | F-15 チャンネル招待リンク発行 |
+| 29 | POST | `/api/channel-invites/{token}/accept` | 必要（同一 WS メンバー） | F-15 チャンネル招待受諾（呼び出しユーザーが参加） |
+| 30 | DELETE | `/api/channels/{id}/invites/{inviteId}` | 必要（チャンネルメンバー） | F-15 チャンネル招待リンク無効化 |
 
 > **メッセージ送信について**: F-05 / F-06 の **新規メッセージ送信** は WebSocket（STOMP）経由が主であり、REST には用意しない。理由: クライアント・サーバー双方で配信経路を一本化することで、リアルタイム配信時のメッセージ重複・順序逆転を避けるため。スレッド返信（F-08）のみ MVP では REST も用意し、WebSocket 経路と並走させる検討余地を残す。詳細は [6. WebSocket との境界](#6-websocket-との境界) を参照。
 
@@ -702,7 +705,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ### 5.8 ワークスペース招待（F-15）
 
-> MVP スコープは **ワークスペース招待のみ**。チャンネル招待（`POST /api/channels/{id}/invites`）は別 Issue とする。招待は「即メンバー追加」（pending 状態テーブルは作らない、`docs/database-design.md` §3.5 の方針）。
+> 招待は「即メンバー追加」（pending 状態テーブルは作らない、`docs/database-design.md` §3.5 の方針）。チャンネル単位の招待は [5.9 チャンネル招待](#59-チャンネル招待-f-15) で別途定義する。
 
 **トークンの扱い**: 平文トークンは発行レスポンスでのみ返す。サーバーは `SHA-256` ハッシュ（hex 64桁）のみを `workspace_invites.token_hash` に保存し、平文は保持しない。受諾時はクライアントが提示した平文を再ハッシュして照合する。
 
@@ -768,6 +771,73 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 > - **410 Gone の採用**: 期限切れ・無効化・使用上限は「リクエストは妥当だがリソースの状態で利用不可」のため、バリデーション失敗用の `422` ではなく `410` を用いる。
 > - **冪等な受諾**: 招待リンクは複数回踏まれる前提（メール / チャット共有）のため、既メンバーの受諾はエラーにせず `200` を返す。
 > - **使用回数の同時実行**: `used_count` は `@Transactional` 内の read-modify-write。高並行では `max_uses` をわずかに超過しうるが招待では許容（厳密化が必要なら楽観ロック / 条件付き UPDATE に切替可能）。
+
+### 5.9 チャンネル招待（F-15）
+
+> ワークスペース招待（5.8）の構造をチャンネル単位に写したもの。`channel_invites` テーブル（`docs/database-design.md`）に保存し、トークンの扱い・`410 Gone` の方針・冪等受諾・`used_count` の同時実行はワークスペース招待と同一。
+>
+> **権限モデルの差分**: ワークスペース招待が **OWNER のみ**発行・無効化できるのに対し、チャンネル招待は **当該チャンネルのアクティブメンバー**であれば発行・無効化できる。受諾するユーザーは **そのチャンネルが属するワークスペースのメンバー**でなければならない（チャンネル参加の前提）。これによりプライベートチャンネルへ既存 WS メンバーを招き入れる導線になる。
+
+**トークンの扱い**: 平文トークンは発行レスポンスでのみ返す。サーバーは `SHA-256` ハッシュ（hex 64桁）のみを `channel_invites.token_hash` に保存し、平文は保持しない。受諾時はクライアントが提示した平文を再ハッシュして照合する。
+
+#### 5.9.1 POST /api/channels/{id}/invites
+
+- **目的**: チャンネルの招待リンクを発行する
+- **認証**: 必要（当該チャンネルの **アクティブメンバーのみ**）
+- **リクエスト**（ボディ任意。省略時は既定値。フィールド仕様は [5.8.1](#581-post-apiworkspaceswsidinvites) と同一）:
+
+```json
+{ "expiresInHours": 24, "maxUses": 5 }
+```
+
+- **レスポンス** `201 Created`:
+
+```json
+{
+  "id": 7,
+  "channelId": 4,
+  "token": "rawTokenString...",
+  "inviteUrl": "http://localhost:3000/channel-invite/rawTokenString...",
+  "expiresAt": "2026-06-05T12:00:00+09:00",
+  "maxUses": 5,
+  "usedCount": 0,
+  "createdAt": "2026-05-29T12:00:00+09:00"
+}
+```
+
+  - `token` / `inviteUrl` はこのレスポンスでのみ取得可能（再取得不可）
+- **エラー**:
+  - `401 Unauthorized`
+  - `403 Forbidden`: 当該チャンネルの非メンバー
+  - `404 Not Found`: チャンネル不在
+  - `422 Unprocessable Entity`: `expiresInHours` / `maxUses` の範囲違反
+
+#### 5.9.2 POST /api/channel-invites/{token}/accept
+
+- **目的**: 招待を受諾し、呼び出しユーザーをチャンネルのメンバーにする
+- **認証**: 必要（受諾するのはログイン中のユーザー本人）
+- **リクエスト**: ボディなし。`token` はパス変数（発行時の平文トークン）
+- **レスポンス** `200 OK`: 参加した `Channel`
+  - 既にアクティブメンバーの場合も **冪等に `200`**（`used_count` は消費しない）
+  - 新規参加時は `used_count` を 1 加算する。過去に退出した行があれば `left_at` をクリアして再参加
+- **エラー**:
+  - `401 Unauthorized`
+  - `403 Forbidden`: チャンネルが属するワークスペースの非メンバー
+  - `404 Not Found`: 不明なトークン / チャンネル削除済み
+  - `410 Gone`: 招待が無効化済み / 有効期限切れ / 使用上限到達
+
+> URL を `/api/channel-invites/{token}/accept` とし、ワークスペース招待の `/api/invites/{token}/accept`（5.8.2）と分離している。これは受諾後に参加させる対象（ワークスペース vs チャンネル）と必要な事前権限が異なるため。
+
+#### 5.9.3 DELETE /api/channels/{id}/invites/{inviteId}
+
+- **目的**: チャンネルの招待リンクを無効化する（`revoked_at` を設定）
+- **認証**: 必要（当該チャンネルの **アクティブメンバーのみ**）
+- **レスポンス** `204 No Content`
+  - 既に無効化済みでも冪等に `204`
+- **エラー**:
+  - `401 Unauthorized`
+  - `403 Forbidden`: 当該チャンネルの非メンバー
+  - `404 Not Found`: 招待が存在しない、または当該チャンネルに属さない `inviteId`
 
 ---
 
