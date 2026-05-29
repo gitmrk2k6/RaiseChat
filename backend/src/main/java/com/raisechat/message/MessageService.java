@@ -19,6 +19,7 @@ import com.raisechat.message.dto.SendMessageRequest;
 import com.raisechat.message.dto.WsEvent;
 import com.raisechat.message.exception.MessageForbiddenException;
 import com.raisechat.message.exception.MessageNotFoundException;
+import com.raisechat.notification.NotificationService;
 import com.raisechat.user.UserRepository;
 import com.raisechat.workspace.WorkspaceMemberRepository;
 import com.raisechat.workspace.WorkspaceRole;
@@ -50,6 +51,7 @@ public class MessageService {
     private final DmService dmService;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
@@ -74,6 +76,7 @@ public class MessageService {
             DmService dmService,
             WorkspaceMemberRepository workspaceMemberRepository,
             UserRepository userRepository,
+            NotificationService notificationService,
             StringRedisTemplate redisTemplate,
             ObjectMapper objectMapper
     ) {
@@ -85,6 +88,7 @@ public class MessageService {
         this.dmService = dmService;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.userRepository = userRepository;
+        this.notificationService = notificationService;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
     }
@@ -350,6 +354,8 @@ public class MessageService {
     // 配信先を一本化することで、REST 経由の返信と WebSocket 経由の親付き送信が同じトピックに乗る。
     private void publishCreated(Message message, MessageResponse dto) {
         publishMessageEvent(message, WsEvent.EventType.MESSAGE_CREATED, dto);
+        // F-14: 新着を受信者の未読カウンタへファンアウト（同一トランザクション内）。
+        notificationService.onNewMessage(message);
     }
 
     private void publishEditDeleteEvent(Message message, WsEvent.EventType type, MessageResponse dto) {

@@ -29,7 +29,7 @@ import java.util.Map;
 // auth パッケージの AuthExceptionHandler は Map 形式の旧仕様（後続 Issue で全体移行）。
 // 本ハンドラは新規実装（user / workspace）のみに ProblemDetail を適用するため basePackages でホワイトリスト化。
 // auth は basePackages に含めず、AuthExceptionHandler が引き続き処理する。
-@RestControllerAdvice(basePackages = {"com.raisechat.user", "com.raisechat.workspace", "com.raisechat.channel", "com.raisechat.message", "com.raisechat.dm"})
+@RestControllerAdvice(basePackages = {"com.raisechat.user", "com.raisechat.workspace", "com.raisechat.channel", "com.raisechat.message", "com.raisechat.dm", "com.raisechat.notification"})
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class GlobalExceptionHandler {
 
