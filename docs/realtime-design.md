@@ -312,7 +312,7 @@ WebSocket で流す JSON はすべて **同じ封筒（envelope）** に入れ�
 ```
 
 - `payload` は REST の `Message` スキーマ（[docs/api-design.md §4.4](api-design.md)）と完全一致させる
-- スレッド返信なら `parentMessageId` が入り、`/topic/threads/{parentMessageId}` にも配信
+- スレッド返信なら `parentMessageId`（スレッドの root ID）が入り、イベントは **`/topic/threads/{rootId}` のみ** に配信する（チャンネル / DM トピックには流さない。チャンネル / DM 履歴は返信を除外しているため、ミラー配信＝"also send to channel" は post-MVP）。実装は #63
 - DM なら `channelId: null` / `dmRoomId` が入り、`/topic/dm/{roomId}` に配信
 
 ### 6.2 クライアント → サーバー（`message.send`）
