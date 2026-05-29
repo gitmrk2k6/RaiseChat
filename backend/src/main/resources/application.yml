@@ -41,6 +41,9 @@ app:
     allowed-origins: ${WS_ALLOWED_ORIGINS:http://localhost:3000}
   redis:
     channel-prefix: "messages:channel:"
+  invite:
+    # 招待リンクのベース URL。発行レスポンスの inviteUrl を「base-url/{token}」で組み立てる。
+    base-url: ${INVITE_BASE_URL:http://localhost:3000/invite}
 
 logging:
   level:

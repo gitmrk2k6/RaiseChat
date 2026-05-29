@@ -15,6 +15,10 @@ public interface ChannelRepository extends JpaRepository<Channel, Long> {
     // ワークスペース内の同名チャンネル重複検査（大文字小文字を無視。DB のユニーク制約と同じ意味）
     boolean existsByWorkspaceIdAndNameIgnoreCaseAndDeletedAtIsNull(Long workspaceId, String name);
 
+    // ワークスペース内の特定チャンネルを名前で取得（招待受諾時に "general" へ自動参加させるため）。
+    // チャンネル名は ws 内で case-insensitive ユニークなので 1 件に特定できる。
+    Optional<Channel> findByWorkspaceIdAndNameIgnoreCaseAndDeletedAtIsNull(Long workspaceId, String name);
+
     // 一覧クエリ:
     //   - 同 ws のメンバー前提（service 層で検証済み）
     //   - PUBLIC は無条件で表示、PRIVATE は自分が channel_members に含まれる場合のみ表示
