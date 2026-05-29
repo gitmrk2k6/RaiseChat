@@ -671,6 +671,8 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ### 5.7 スレッド（F-08）
 
+> 実装済み（#63）。スレッドは **1 階層に固定**（Slack セマンティクス）。返信への返信が来た場合は親をたどってスレッドの **root** に付け替える（`parentMessageId` は常に root を指す）。返信イベントは **`/topic/threads/{rootId}` のみ** に配信し、チャンネル / DM トピックには流さない（チャンネル / DM 履歴は `parent IS NULL` で返信を除外しているため、ミラー配信は再読込との不整合を生む。"also send to channel" は post-MVP）。
+
 #### 5.7.1 GET /api/messages/{parentId}/replies
 
 - **目的**: 親メッセージへのスレッド返信一覧
@@ -691,8 +693,8 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 { "body": "返信本文" }
 ```
 
-- **レスポンス** `201 Created`: 作成された `Message`（`parentMessageId` がセットされる）
-- **副作用**: WebSocket で `/topic/threads/{parentId}` に新規返信イベントを配信
+- **レスポンス** `201 Created`: 作成された `Message`（`parentMessageId` にスレッドの root ID がセットされる）
+- **副作用**: WebSocket で `/topic/threads/{rootId}` に `MESSAGE_CREATED` イベントを配信（Redis Pub-Sub `messages:thread:{rootId}` 経由）
 - **エラー**:
   - `401 Unauthorized` / `403 Forbidden` / `404 Not Found` / `422 Unprocessable Entity`
 
@@ -820,3 +822,4 @@ REST と WebSocket の責務分担を明示する。WebSocket メッセージプ
 | --- | --- | --- |
 | 2026-05-28 | 初版作成（F-01〜F-08 のコア機能）| #23 |
 | 2026-05-29 | F-15 ワークスペース招待 API（発行・受諾・無効化）を §5.8 に追加。410 Gone を §2.3 に追加 | #59 |
+| 2026-05-29 | F-08 スレッド API（§5.7）を実装。1 階層固定（root 付け替え）/ 返信イベントは `/topic/threads/{rootId}` のみに配信、を実装メモとして追記 | #63 |

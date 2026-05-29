@@ -11,6 +11,7 @@ import com.raisechat.dm.DmService;
 import com.raisechat.message.dto.EditMessageRequest;
 import com.raisechat.message.dto.MessageListResponse;
 import com.raisechat.message.dto.MessageResponse;
+import com.raisechat.message.dto.ReplyMessageRequest;
 import com.raisechat.message.dto.SendMessageRequest;
 import com.raisechat.message.dto.WsEvent;
 import com.raisechat.message.exception.MessageForbiddenException;
@@ -56,6 +57,9 @@ public class MessageService {
 
     @Value("${app.redis.dm-prefix:messages:dm:}")
     private String redisDmPrefix;
+
+    @Value("${app.redis.thread-prefix:messages:thread:}")
+    private String redisThreadPrefix;
 
     public MessageService(
             MessageRepository messageRepository,
@@ -144,7 +148,7 @@ public class MessageService {
         entityManager.refresh(message);
 
         MessageResponse dto = MessageResponse.from(message);
-        publishChannelEvent(channelId, WsEvent.EventType.MESSAGE_CREATED, dto);
+        publishCreated(message, dto);
         return dto;
     }
 
@@ -171,7 +175,7 @@ public class MessageService {
         entityManager.refresh(message);
 
         MessageResponse dto = MessageResponse.from(message);
-        publishDmEvent(dmRoomId, WsEvent.EventType.MESSAGE_CREATED, dto);
+        publishCreated(message, dto);
         return dto;
     }
 
@@ -221,6 +225,63 @@ public class MessageService {
         publishEditDeleteEvent(message, WsEvent.EventType.MESSAGE_DELETED, dto);
     }
 
+    @Transactional(readOnly = true)
+    public MessageListResponse listReplies(Long userId, Long parentId, Long cursorId, Integer limit) {
+        Message parent = messageRepository.findById(parentId)
+                .filter(m -> m.getDeletedAt() == null)
+                .orElseThrow(() -> new MessageNotFoundException(parentId));
+        requireMessageAccess(parent, userId);
+
+        int effectiveLimit = clampLimit(limit);
+        long effectiveCursor = cursorId != null ? cursorId : 0L;
+
+        List<Message> rows = messageRepository.findRepliesAfter(
+                parentId, effectiveCursor, PageRequest.ofSize(effectiveLimit + 1));
+
+        boolean hasMore = rows.size() > effectiveLimit;
+        List<Message> page = hasMore ? rows.subList(0, effectiveLimit) : rows;
+
+        List<MessageResponse> items = page.stream().map(MessageResponse::from).toList();
+        String nextCursor = hasMore ? String.valueOf(page.get(page.size() - 1).getId()) : null;
+
+        return new MessageListResponse(items, nextCursor, hasMore);
+    }
+
+    @Transactional
+    public MessageResponse createReply(Long userId, Long parentId, ReplyMessageRequest req) {
+        Message parent = messageRepository.findById(parentId)
+                .filter(m -> m.getDeletedAt() == null)
+                .orElseThrow(() -> new MessageNotFoundException(parentId));
+        requireMessageAccess(parent, userId);
+
+        // スレッドは 1 階層に固定（Slack セマンティクス）。返信への返信はスレッドの root に付け替える。
+        Message root = parent.getParent() != null ? parent.getParent() : parent;
+
+        Message message = new Message();
+        message.setWorkspace(root.getWorkspace());
+        message.setChannel(root.getChannel());
+        message.setDmRoom(root.getDmRoom());
+        message.setParent(root);
+        message.setAuthor(userRepository.getReferenceById(userId));
+        message.setBody(req.body());
+
+        messageRepository.saveAndFlush(message);
+        entityManager.refresh(message);
+
+        MessageResponse dto = MessageResponse.from(message);
+        publishCreated(message, dto);
+        return dto;
+    }
+
+    // スレッド返信の閲覧 / 投稿は、親メッセージが属するチャンネル / DM のメンバーシップを継承する。
+    private void requireMessageAccess(Message parent, Long userId) {
+        if (parent.getChannel() != null) {
+            requireChannelMember(parent.getChannel().getId(), userId);
+        } else if (parent.getDmRoom() != null) {
+            dmService.requireDmMember(parent.getDmRoom().getId(), userId);
+        }
+    }
+
     private void requireChannelMember(Long channelId, Long userId) {
         channelMemberRepository.findByChannelIdAndUserIdAndLeftAtIsNull(channelId, userId)
                 .orElseThrow(() -> new MessageForbiddenException(
@@ -235,8 +296,24 @@ public class MessageService {
         publish(redisDmPrefix + dmRoomId, type, payload);
     }
 
+    private void publishThreadEvent(Long parentId, WsEvent.EventType type, MessageResponse payload) {
+        publish(redisThreadPrefix + parentId, type, payload);
+    }
+
+    // 親を持つメッセージ（スレッド返信）はスレッドトピックへ、そうでなければチャンネル / DM トピックへ配信する。
+    // 配信先を一本化することで、REST 経由の返信と WebSocket 経由の親付き送信が同じトピックに乗る。
+    private void publishCreated(Message message, MessageResponse dto) {
+        publishMessageEvent(message, WsEvent.EventType.MESSAGE_CREATED, dto);
+    }
+
     private void publishEditDeleteEvent(Message message, WsEvent.EventType type, MessageResponse dto) {
-        if (message.getChannel() != null) {
+        publishMessageEvent(message, type, dto);
+    }
+
+    private void publishMessageEvent(Message message, WsEvent.EventType type, MessageResponse dto) {
+        if (message.getParent() != null) {
+            publishThreadEvent(message.getParent().getId(), type, dto);
+        } else if (message.getChannel() != null) {
             publishChannelEvent(message.getChannel().getId(), type, dto);
         } else if (message.getDmRoom() != null) {
             publishDmEvent(message.getDmRoom().getId(), type, dto);

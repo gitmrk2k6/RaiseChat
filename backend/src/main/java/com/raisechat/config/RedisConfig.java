@@ -2,6 +2,7 @@ package com.raisechat.config;
 
 import com.raisechat.message.ws.MessageChannelRedisSubscriber;
 import com.raisechat.message.ws.MessageDmRedisSubscriber;
+import com.raisechat.message.ws.MessageThreadRedisSubscriber;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,6 +20,9 @@ public class RedisConfig {
     @Value("${app.redis.dm-prefix:messages:dm:}")
     private String dmPrefix;
 
+    @Value("${app.redis.thread-prefix:messages:thread:}")
+    private String threadPrefix;
+
     @Bean
     public StringRedisTemplate stringRedisTemplate(RedisConnectionFactory factory) {
         return new StringRedisTemplate(factory);
@@ -28,12 +32,14 @@ public class RedisConfig {
     public RedisMessageListenerContainer redisMessageListenerContainer(
             RedisConnectionFactory factory,
             MessageChannelRedisSubscriber channelSubscriber,
-            MessageDmRedisSubscriber dmSubscriber
+            MessageDmRedisSubscriber dmSubscriber,
+            MessageThreadRedisSubscriber threadSubscriber
     ) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(factory);
         container.addMessageListener(channelSubscriber, new PatternTopic(channelPrefix + "*"));
         container.addMessageListener(dmSubscriber, new PatternTopic(dmPrefix + "*"));
+        container.addMessageListener(threadSubscriber, new PatternTopic(threadPrefix + "*"));
         return container;
     }
 }
