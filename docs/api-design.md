@@ -139,6 +139,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 | `403 Forbidden` | 認証済みだが操作権限なし |
 | `404 Not Found` | リソース不在（論理削除済み含む） |
 | `409 Conflict` | 一意制約違反（user_id 重複、DM ルーム重複作成など） |
+| `410 Gone` | リソースは存在したが利用不可になった（招待リンクの期限切れ・無効化・使用上限到達など） |
 | `422 Unprocessable Entity` | バリデーション違反（型は正しいが値が不正） |
 | `500 Internal Server Error` | サーバー側未捕捉エラー |
 
@@ -174,6 +175,9 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 | 22 | GET | `/api/dm/rooms/{id}/messages` | 必要 | F-06 DM 履歴取得 |
 | 23 | GET | `/api/messages/{parentId}/replies` | 必要 | F-08 スレッド返信一覧 |
 | 24 | POST | `/api/messages/{parentId}/replies` | 必要 | F-08 スレッド返信投稿（送信は WebSocket 想定だが REST フォールバック用に定義） |
+| 25 | POST | `/api/workspaces/{wsId}/invites` | 必要（OWNER） | F-15 ワークスペース招待リンク発行 |
+| 26 | POST | `/api/invites/{token}/accept` | 必要 | F-15 招待受諾（呼び出しユーザーが参加） |
+| 27 | DELETE | `/api/workspaces/{wsId}/invites/{inviteId}` | 必要（OWNER） | F-15 招待リンク無効化 |
 
 > **メッセージ送信について**: F-05 / F-06 の **新規メッセージ送信** は WebSocket（STOMP）経由が主であり、REST には用意しない。理由: クライアント・サーバー双方で配信経路を一本化することで、リアルタイム配信時のメッセージ重複・順序逆転を避けるため。スレッド返信（F-08）のみ MVP では REST も用意し、WebSocket 経路と並走させる検討余地を残す。詳細は [6. WebSocket との境界](#6-websocket-との境界) を参照。
 
@@ -694,6 +698,75 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 > 設計判断: 新規スレッド返信投稿は本来 WebSocket 送信が望ましいが、スレッド開始は頻度が低くクライアント実装が単純化できるため MVP では REST も用意する。チャンネル / DM のトップレベルメッセージ送信は WebSocket 一本に絞る（[6](#6-websocket-との境界) 参照）。
 
+### 5.8 ワークスペース招待（F-15）
+
+> MVP スコープは **ワークスペース招待のみ**。チャンネル招待（`POST /api/channels/{id}/invites`）は別 Issue とする。招待は「即メンバー追加」（pending 状態テーブルは作らない、`docs/database-design.md` §3.5 の方針）。
+
+**トークンの扱い**: 平文トークンは発行レスポンスでのみ返す。サーバーは `SHA-256` ハッシュ（hex 64桁）のみを `workspace_invites.token_hash` に保存し、平文は保持しない。受諾時はクライアントが提示した平文を再ハッシュして照合する。
+
+#### 5.8.1 POST /api/workspaces/{wsId}/invites
+
+- **目的**: 招待リンクを発行する
+- **認証**: 必要（当該ワークスペースの **OWNER のみ**）
+- **リクエスト**（ボディ任意。省略時は既定値）:
+
+```json
+{ "expiresInHours": 24, "maxUses": 5 }
+```
+
+  - `expiresInHours`（任意, 1〜8760, 既定 168 = 7日）: 有効期限
+  - `maxUses`（任意, 1〜1000, 既定 null = 無制限）: 使用回数上限
+- **レスポンス** `201 Created`:
+
+```json
+{
+  "id": 12,
+  "workspaceId": 2,
+  "token": "rawTokenString...",
+  "inviteUrl": "http://localhost:3000/invite/rawTokenString...",
+  "expiresAt": "2026-06-05T12:00:00+09:00",
+  "maxUses": 5,
+  "usedCount": 0,
+  "createdAt": "2026-05-29T12:00:00+09:00"
+}
+```
+
+  - `token` / `inviteUrl` はこのレスポンスでのみ取得可能（再取得不可）
+- **エラー**:
+  - `401 Unauthorized`
+  - `403 Forbidden`: 非メンバー / 非 OWNER
+  - `404 Not Found`: ワークスペース不在
+  - `422 Unprocessable Entity`: `expiresInHours` / `maxUses` の範囲違反
+
+#### 5.8.2 POST /api/invites/{token}/accept
+
+- **目的**: 招待を受諾し、呼び出しユーザーをワークスペース（および `general` チャンネル）のメンバーにする
+- **認証**: 必要（受諾するのはログイン中のユーザー本人）
+- **リクエスト**: ボディなし。`token` はパス変数（発行時の平文トークン）
+- **レスポンス** `200 OK`: 参加した `Workspace`
+  - 既にアクティブメンバーの場合も **冪等に `200`**（`used_count` は消費しない）
+  - 新規参加時は `used_count` を 1 加算し、`general` チャンネルにも参加させる
+- **エラー**:
+  - `401 Unauthorized`
+  - `404 Not Found`: 不明なトークン / ワークスペース削除済み
+  - `410 Gone`: 招待が無効化済み / 有効期限切れ / 使用上限到達
+
+#### 5.8.3 DELETE /api/workspaces/{wsId}/invites/{inviteId}
+
+- **目的**: 招待リンクを無効化する（`revoked_at` を設定）
+- **認証**: 必要（当該ワークスペースの **OWNER のみ**）
+- **レスポンス** `204 No Content`
+  - 既に無効化済みでも冪等に `204`
+- **エラー**:
+  - `401 Unauthorized`
+  - `403 Forbidden`: 非メンバー / 非 OWNER
+  - `404 Not Found`: 招待が存在しない、または当該ワークスペースに属さない `inviteId`
+
+> 設計判断:
+> - **410 Gone の採用**: 期限切れ・無効化・使用上限は「リクエストは妥当だがリソースの状態で利用不可」のため、バリデーション失敗用の `422` ではなく `410` を用いる。
+> - **冪等な受諾**: 招待リンクは複数回踏まれる前提（メール / チャット共有）のため、既メンバーの受諾はエラーにせず `200` を返す。
+> - **使用回数の同時実行**: `used_count` は `@Transactional` 内の read-modify-write。高並行では `max_uses` をわずかに超過しうるが招待では許容（厳密化が必要なら楽観ロック / 条件付き UPDATE に切替可能）。
+
 ---
 
 ## 6. WebSocket との境界
@@ -736,7 +809,7 @@ REST と WebSocket の責務分担を明示する。WebSocket メッセージプ
 | F-12 メンション | メッセージ送信時に本文パースで自動抽出。明示エンドポイントは不要 | 通知は F-14 と連動 |
 | F-13 検索 | `GET /api/workspaces/{wsId}/search?q=...` | PostgreSQL `body_tsv` を使った全文検索 |
 | F-14 通知 | `GET /api/notifications`, `PUT /api/read-states` 等 | 未読カウントは Redis 主、`read_states` はソース |
-| F-15 招待 | `POST /api/workspaces/{wsId}/invites`, `POST /api/invites/{token}/accept` | |
+| F-15 招待 | ✅ ワークスペース招待を [§5.8](#58-ワークスペース招待f-15) で定義済。チャンネル招待（`POST /api/channels/{id}/invites`）は別 Issue | |
 | F-16 管理者操作 | 既存 CRUD の権限拡張で対応 | 専用エンドポイントは最小限 |
 
 ---
@@ -746,3 +819,4 @@ REST と WebSocket の責務分担を明示する。WebSocket メッセージプ
 | 日付 | 変更内容 | PR |
 | --- | --- | --- |
 | 2026-05-28 | 初版作成（F-01〜F-08 のコア機能）| #23 |
+| 2026-05-29 | F-15 ワークスペース招待 API（発行・受諾・無効化）を §5.8 に追加。410 Gone を §2.3 に追加 | #59 |
