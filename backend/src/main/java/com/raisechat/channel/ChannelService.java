@@ -1,5 +1,6 @@
 package com.raisechat.channel;
 
+import com.raisechat.channel.dto.ChannelInviteResponse;
 import com.raisechat.channel.dto.ChannelListResponse;
 import com.raisechat.channel.dto.ChannelResponse;
 import com.raisechat.channel.dto.CreateChannelRequest;
@@ -8,15 +9,20 @@ import com.raisechat.channel.exception.ChannelForbiddenException;
 import com.raisechat.channel.exception.ChannelNotFoundException;
 import com.raisechat.user.User;
 import com.raisechat.user.UserRepository;
+import com.raisechat.workspace.InviteTokenService;
 import com.raisechat.workspace.Workspace;
 import com.raisechat.workspace.WorkspaceMember;
 import com.raisechat.workspace.WorkspaceMemberRepository;
 import com.raisechat.workspace.WorkspaceRepository;
 import com.raisechat.workspace.WorkspaceRole;
+import com.raisechat.workspace.dto.CreateInviteRequest;
+import com.raisechat.workspace.exception.InviteGoneException;
+import com.raisechat.workspace.exception.InviteNotFoundException;
 import com.raisechat.workspace.exception.WorkspaceForbiddenException;
 import com.raisechat.workspace.exception.WorkspaceNotFoundException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -35,9 +41,15 @@ public class ChannelService {
 
     private final ChannelRepository channelRepository;
     private final ChannelMemberRepository channelMemberRepository;
+    private final ChannelInviteRepository channelInviteRepository;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
+    private final InviteTokenService inviteTokenService;
+
+    // 招待 URL の組み立てに使うフロントエンドのベース URL（ワークスペース招待とは別経路）。
+    @Value("${app.channel-invite.base-url:http://localhost:3000/channel-invite}")
+    private String channelInviteBaseUrl;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -45,15 +57,19 @@ public class ChannelService {
     public ChannelService(
             ChannelRepository channelRepository,
             ChannelMemberRepository channelMemberRepository,
+            ChannelInviteRepository channelInviteRepository,
             WorkspaceRepository workspaceRepository,
             WorkspaceMemberRepository workspaceMemberRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            InviteTokenService inviteTokenService
     ) {
         this.channelRepository = channelRepository;
         this.channelMemberRepository = channelMemberRepository;
+        this.channelInviteRepository = channelInviteRepository;
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.userRepository = userRepository;
+        this.inviteTokenService = inviteTokenService;
     }
 
     @Transactional
@@ -193,6 +209,105 @@ public class ChannelService {
         }
 
         channel.setDeletedAt(OffsetDateTime.now());
+    }
+
+    // ---------- 招待 (F-15: チャンネル招待) ----------
+
+    // 招待リンクを発行する。発行できるのはチャンネルのアクティブメンバーのみ。
+    // 平文トークンはこのレスポンスでのみ返す（DB にはハッシュしか残らない）。
+    @Transactional
+    public ChannelInviteResponse createInvite(Long userId, Long channelId, CreateInviteRequest req) {
+        Channel channel = channelRepository.findByIdAndDeletedAtIsNull(channelId)
+                .orElseThrow(() -> new ChannelNotFoundException(channelId));
+        requireChannelMember(channelId, userId);
+
+        String rawToken = inviteTokenService.generateRawToken();
+
+        ChannelInvite invite = new ChannelInvite();
+        invite.setChannel(channel);
+        invite.setInvitedBy(userRepository.getReferenceById(userId));
+        invite.setTokenHash(inviteTokenService.hash(rawToken));
+        invite.setExpiresAt(OffsetDateTime.now().plusHours(req.resolveExpiresInHours()));
+        invite.setMaxUses(req.maxUses());
+        channelInviteRepository.saveAndFlush(invite);
+
+        // created_at は DB デフォルトで設定されるため refresh で読み戻す。
+        entityManager.refresh(invite);
+
+        return ChannelInviteResponse.from(invite, rawToken, channelInviteBaseUrl + "/" + rawToken);
+    }
+
+    // 招待を受諾し、呼び出しユーザーをチャンネルのメンバーにする。
+    // 受諾の前提として、対象チャンネルが属するワークスペースのメンバーであること（非メンバーは 403）。
+    // 既にチャンネルのアクティブメンバーなら冪等に 200（used_count は増やさない）。
+    @Transactional
+    public ChannelResponse acceptInvite(Long userId, String rawToken) {
+        ChannelInvite invite = channelInviteRepository.findByTokenHash(inviteTokenService.hash(rawToken))
+                .orElseThrow(InviteNotFoundException::new);
+
+        if (invite.getRevokedAt() != null) {
+            throw new InviteGoneException("招待は無効化されています");
+        }
+        if (invite.getExpiresAt().isBefore(OffsetDateTime.now())) {
+            throw new InviteGoneException("招待の有効期限が切れています");
+        }
+        if (invite.getMaxUses() != null && invite.getUsedCount() >= invite.getMaxUses()) {
+            throw new InviteGoneException("招待の使用上限に達しています");
+        }
+
+        Channel channel = invite.getChannel();
+        if (channel.getDeletedAt() != null) {
+            // チャンネルが削除済みなら招待は実質無効。トークン総当たり対策で 404 に倒す。
+            throw new InviteNotFoundException();
+        }
+
+        // チャンネル参加にはワークスペースメンバーであることが前提（非メンバーは 403）。
+        requireWorkspaceMember(channel.getWorkspace().getId(), userId);
+
+        // 既にアクティブメンバーなら冪等に成功（使用回数も消費しない）。
+        if (channelMemberRepository.findByChannelIdAndUserIdAndLeftAtIsNull(channel.getId(), userId).isPresent()) {
+            return ChannelResponse.from(channel);
+        }
+
+        addAsChannelMember(channel, userId);
+
+        // read-modify-write。WorkspaceService#acceptInvite と同様に高並行では max_uses を
+        // わずかに超過しうるが、招待ユースケースでは許容。
+        invite.setUsedCount(invite.getUsedCount() + 1);
+
+        return ChannelResponse.from(channel);
+    }
+
+    // 招待を無効化する。無効化できるのはチャンネルのアクティブメンバーのみ。
+    // 別チャンネルの inviteId は findByIdAndChannelId 不一致で 404。既に無効化済みでも冪等に成功（204）。
+    @Transactional
+    public void revokeInvite(Long userId, Long channelId, Long inviteId) {
+        requireChannelMember(channelId, userId);
+
+        ChannelInvite invite = channelInviteRepository.findByIdAndChannelId(inviteId, channelId)
+                .orElseThrow(InviteNotFoundException::new);
+
+        if (invite.getRevokedAt() == null) {
+            invite.setRevokedAt(OffsetDateTime.now());
+        }
+    }
+
+    // 呼び出しユーザーが当該チャンネルのアクティブメンバーであることを保証する（非メンバーは 403）。
+    private void requireChannelMember(Long channelId, Long userId) {
+        channelMemberRepository.findByChannelIdAndUserIdAndLeftAtIsNull(channelId, userId)
+                .orElseThrow(() -> new ChannelForbiddenException(
+                        "チャンネルのメンバーではありません: channelId=" + channelId));
+    }
+
+    // チャンネルへメンバーとして参加。過去に退出した行があれば left_at をクリアして再参加。
+    private void addAsChannelMember(Channel channel, Long userId) {
+        channelMemberRepository.findByChannelIdAndUserId(channel.getId(), userId)
+                .ifPresentOrElse(existing -> existing.setLeftAt(null), () -> {
+                    ChannelMember member = new ChannelMember();
+                    member.setChannel(channel);
+                    member.setUser(userRepository.getReferenceById(userId));
+                    channelMemberRepository.save(member);
+                });
     }
 
     private void requireWorkspaceMember(Long workspaceId, Long userId) {

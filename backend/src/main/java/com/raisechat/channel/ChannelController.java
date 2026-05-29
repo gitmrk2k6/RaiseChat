@@ -1,9 +1,11 @@
 package com.raisechat.channel;
 
 import com.raisechat.auth.jwt.AuthenticatedUser;
+import com.raisechat.channel.dto.ChannelInviteResponse;
 import com.raisechat.channel.dto.ChannelListResponse;
 import com.raisechat.channel.dto.ChannelResponse;
 import com.raisechat.channel.dto.CreateChannelRequest;
+import com.raisechat.workspace.dto.CreateInviteRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -81,6 +83,29 @@ public class ChannelController {
             @PathVariable Long id
     ) {
         channelService.delete(principal.id(), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // 招待リンクを発行する（チャンネルメンバーのみ）。ボディは任意（{} で既定値）。
+    @PostMapping("/api/channels/{id}/invites")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ChannelInviteResponse createInvite(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable Long id,
+            @Valid @RequestBody(required = false) CreateInviteRequest req
+    ) {
+        CreateInviteRequest body = req == null ? new CreateInviteRequest(null, null) : req;
+        return channelService.createInvite(principal.id(), id, body);
+    }
+
+    // 招待リンクを無効化する（チャンネルメンバーのみ）。
+    @DeleteMapping("/api/channels/{id}/invites/{inviteId}")
+    public ResponseEntity<Void> revokeInvite(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable Long id,
+            @PathVariable Long inviteId
+    ) {
+        channelService.revokeInvite(principal.id(), id, inviteId);
         return ResponseEntity.noContent().build();
     }
 }
