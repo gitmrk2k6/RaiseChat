@@ -9,6 +9,8 @@ import com.raisechat.dm.exception.DmValidationException;
 import com.raisechat.message.exception.MessageForbiddenException;
 import com.raisechat.message.exception.MessageNotFoundException;
 import com.raisechat.user.exception.UserNotFoundException;
+import com.raisechat.workspace.exception.InviteGoneException;
+import com.raisechat.workspace.exception.InviteNotFoundException;
 import com.raisechat.workspace.exception.WorkspaceForbiddenException;
 import com.raisechat.workspace.exception.WorkspaceNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -156,6 +158,27 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
         pd.setType(URI.create(PROBLEM_BASE + "validation"));
         pd.setTitle("Validation Failed");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(InviteNotFoundException.class)
+    public ProblemDetail handleInviteNotFound(InviteNotFoundException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
+        pd.setType(URI.create(PROBLEM_BASE + "not-found"));
+        pd.setTitle("Resource Not Found");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    // 招待は存在するが利用不可（期限切れ / 無効化済み / 使用上限）→ 410 Gone。
+    @ExceptionHandler(InviteGoneException.class)
+    public ProblemDetail handleInviteGone(InviteGoneException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.GONE);
+        pd.setType(URI.create(PROBLEM_BASE + "gone"));
+        pd.setTitle("Gone");
         pd.setDetail(ex.getMessage());
         pd.setInstance(URI.create(req.getRequestURI()));
         return pd;

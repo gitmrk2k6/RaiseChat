@@ -1,13 +1,16 @@
 package com.raisechat.workspace;
 
 import com.raisechat.auth.jwt.AuthenticatedUser;
+import com.raisechat.workspace.dto.CreateInviteRequest;
 import com.raisechat.workspace.dto.CreateWorkspaceRequest;
+import com.raisechat.workspace.dto.InviteResponse;
 import com.raisechat.workspace.dto.WorkspaceDetailResponse;
 import com.raisechat.workspace.dto.WorkspaceListResponse;
 import com.raisechat.workspace.dto.WorkspaceResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -51,5 +54,28 @@ public class WorkspaceController {
             @PathVariable Long wsId
     ) {
         return workspaceService.getDetail(principal.id(), wsId);
+    }
+
+    // 招待リンクを発行する（OWNER のみ）。ボディは任意（{} で既定値）。
+    @PostMapping("/{wsId}/invites")
+    @ResponseStatus(HttpStatus.CREATED)
+    public InviteResponse createInvite(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable Long wsId,
+            @Valid @RequestBody(required = false) CreateInviteRequest req
+    ) {
+        CreateInviteRequest body = req == null ? new CreateInviteRequest(null, null) : req;
+        return workspaceService.createInvite(principal.id(), wsId, body);
+    }
+
+    // 招待リンクを無効化する（OWNER のみ）。
+    @DeleteMapping("/{wsId}/invites/{inviteId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void revokeInvite(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable Long wsId,
+            @PathVariable Long inviteId
+    ) {
+        workspaceService.revokeInvite(principal.id(), wsId, inviteId);
     }
 }
