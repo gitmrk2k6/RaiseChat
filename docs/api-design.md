@@ -839,6 +839,61 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
   - `403 Forbidden`: 当該チャンネルの非メンバー
   - `404 Not Found`: 招待が存在しない、または当該チャンネルに属さない `inviteId`
 
+### 5.10 絵文字リアクション（F-11）
+
+> 実装済み（#70）。任意のメッセージに標準絵文字を付与・解除する。同一ユーザー・同一 emoji の重複付与は UNIQUE 制約 `(message_id, user_id, emoji)`（`docs/database-design.md`）で防止し、API は **冪等** に振る舞う。リアクション増減はメッセージと同じトピック（スレッド返信なら `/topic/threads/{rootId}`、通常は `/topic/channels/{id}` / `/topic/dm/{roomId}`）へ WebSocket 配信する。
+
+**`ReactionResponse` スキーマ**（1 メッセージ・1 emoji の集計）:
+
+```json
+{
+  "messageId": 42,
+  "emoji": "👍",
+  "count": 2,
+  "userIds": [1, 3]
+}
+```
+
+  - `count`: その emoji の付与数 / `userIds`: 付与したユーザー ID（古い順）
+
+#### 5.10.1 POST /api/messages/{id}/reactions
+
+- **目的**: メッセージに絵文字リアクションを付与する
+- **認証**: 必要（メッセージが属するチャンネル / DM のメンバーシップを継承）
+- **リクエスト**:
+
+```json
+{ "emoji": "👍" }
+```
+
+  - `emoji`（必須, 1〜32 文字）
+- **レスポンス**: `ReactionResponse`
+  - 新規付与は `201 Created`、既に付与済みなら **冪等に `200 OK`**（`count` は据え置き）
+- **副作用**: 新規付与時のみ `REACTION_ADDED` イベントを配信（既存付与の `200` では配信しない＝他クライアントの二重カウントを防ぐ）
+- **エラー**:
+  - `401 Unauthorized`
+  - `403 Forbidden`: メッセージの属するチャンネル / DM の非メンバー
+  - `404 Not Found`: メッセージ不在 / 削除済み
+  - `422 Unprocessable Entity`: `emoji` が空 / 32 文字超過
+
+#### 5.10.2 DELETE /api/messages/{id}/reactions/{emoji}
+
+- **目的**: 自分が付与したリアクションを解除する
+- **認証**: 必要（付与時と同じメンバーシップ）
+- **リクエスト**: ボディなし。`emoji` はパス変数（URL エンコード）
+- **レスポンス** `204 No Content`
+  - 付与していない emoji の解除も **冪等に `204`**
+- **副作用**: 実際に削除が発生したときのみ `REACTION_REMOVED` イベントを配信
+- **エラー**:
+  - `401 Unauthorized`
+  - `403 Forbidden`: メッセージの属するチャンネル / DM の非メンバー
+  - `404 Not Found`: メッセージ不在 / 削除済み
+
+> 設計判断:
+> - **200 / 201 の切り分け**: 「既存なら 200、新規なら 201」を 1 つの POST で表現し、重複付与を `409` にしない（F-06 DM ルーム作成と同じ冪等方針）。
+> - **配信は状態が変わったときだけ**: 冪等な再付与 / 未付与の解除では WS イベントを流さず、購読側のカウントがずれないようにする。
+> - **配信エンベロープの共通化**: `WsEvent.payload` を `Object` 化し、メッセージ系（`MessageResponse`）とリアクション系（`ReactionResponse`）が同じ封筒・同じ Redis Pub-Sub 経路に乗るようにした。
+
 ---
 
 ## 6. WebSocket との境界
@@ -861,9 +916,9 @@ REST と WebSocket の責務分担を明示する。WebSocket メッセージプ
 
 | destination | 用途 |
 | --- | --- |
-| `/topic/channels/{id}` | チャンネル新規メッセージ・編集・削除イベントの配信先 |
-| `/topic/dm/{roomId}` | DM 新規メッセージ・編集・削除イベントの配信先 |
-| `/topic/threads/{parentId}` | スレッド返信イベントの配信先 |
+| `/topic/channels/{id}` | チャンネル新規メッセージ・編集・削除・リアクション増減イベントの配信先 |
+| `/topic/dm/{roomId}` | DM 新規メッセージ・編集・削除・リアクション増減イベントの配信先 |
+| `/topic/threads/{parentId}` | スレッド返信・スレッド内リアクション増減イベントの配信先 |
 | `/app/channels/{id}/messages` | クライアント → サーバー：チャンネルメッセージ送信 |
 | `/app/dm/{roomId}/messages` | クライアント → サーバー：DM メッセージ送信 |
 
@@ -877,7 +932,7 @@ REST と WebSocket の責務分担を明示する。WebSocket メッセージプ
 | --- | --- | --- |
 | F-09 マークダウン | サーバー側エンドポイントなし | クライアント側レンダリングのみ。XSS 対策は表示時のサニタイズ |
 | F-10 ファイル添付 | `POST /api/messages/{id}/attachments` または S3 pre-signed URL | ファイル方式の決定が前提 |
-| F-11 絵文字リアクション | `POST /api/messages/{id}/reactions`, `DELETE /api/messages/{id}/reactions/{emoji}` | |
+| F-11 絵文字リアクション | ✅ [§5.10](#510-絵文字リアクションf-11) で定義済（付与・解除 + WS 配信） | |
 | F-12 メンション | メッセージ送信時に本文パースで自動抽出。明示エンドポイントは不要 | 通知は F-14 と連動 |
 | F-13 検索 | `GET /api/workspaces/{wsId}/search?q=...` | PostgreSQL `body_tsv` を使った全文検索 |
 | F-14 通知 | `GET /api/notifications`, `PUT /api/read-states` 等 | 未読カウントは Redis 主、`read_states` はソース |
@@ -893,3 +948,4 @@ REST と WebSocket の責務分担を明示する。WebSocket メッセージプ
 | 2026-05-28 | 初版作成（F-01〜F-08 のコア機能）| #23 |
 | 2026-05-29 | F-15 ワークスペース招待 API（発行・受諾・無効化）を §5.8 に追加。410 Gone を §2.3 に追加 | #59 |
 | 2026-05-29 | F-08 スレッド API（§5.7）を実装。1 階層固定（root 付け替え）/ 返信イベントは `/topic/threads/{rootId}` のみに配信、を実装メモとして追記 | #63 |
+| 2026-05-30 | F-11 絵文字リアクション API（§5.10）を実装。付与 201/200 冪等・解除 204 冪等、`WsEvent.payload` を `Object` 化してリアクションイベントを既存トピックへ配信 | #70 |
