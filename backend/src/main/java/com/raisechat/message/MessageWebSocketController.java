@@ -30,4 +30,15 @@ public class MessageWebSocketController {
                 (AuthenticatedUser) ((UsernamePasswordAuthenticationToken) principal).getPrincipal();
         messageService.sendChannelMessage(user.id(), channelId, req);
     }
+
+    @MessageMapping("/dm/{roomId}/messages")
+    public void sendDmMessage(
+            @DestinationVariable Long roomId,
+            @Payload @Validated SendMessageRequest req,
+            Principal principal
+    ) {
+        AuthenticatedUser user =
+                (AuthenticatedUser) ((UsernamePasswordAuthenticationToken) principal).getPrincipal();
+        messageService.sendDmMessage(user.id(), roomId, req);
+    }
 }

@@ -34,6 +34,16 @@ public class MessageController {
         return messageService.listChannelMessages(principal.id(), id, cursor, limit);
     }
 
+    @GetMapping("/api/dm/rooms/{id}/messages")
+    public MessageListResponse listDmMessages(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable Long id,
+            @RequestParam(required = false) Long cursor,
+            @RequestParam(required = false) Integer limit
+    ) {
+        return messageService.listDmMessages(principal.id(), id, cursor, limit);
+    }
+
     @PatchMapping("/api/messages/{id}")
     public MessageResponse editMessage(
             @AuthenticationPrincipal AuthenticatedUser principal,

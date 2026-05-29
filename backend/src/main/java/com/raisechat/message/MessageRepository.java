@@ -23,5 +23,19 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
             @Param("cursorId") Long cursorId,
             Pageable pageable);
 
+    @Query("""
+            SELECT m FROM Message m
+            JOIN FETCH m.author
+            WHERE m.dmRoom.id = :dmRoomId
+              AND m.deletedAt IS NULL
+              AND m.parent IS NULL
+              AND (:cursorId = 0 OR m.id < :cursorId)
+            ORDER BY m.id DESC
+            """)
+    List<Message> findDmMessagesBefore(
+            @Param("dmRoomId") Long dmRoomId,
+            @Param("cursorId") Long cursorId,
+            Pageable pageable);
+
     List<Message> findByParentIdAndDeletedAtIsNullOrderByCreatedAtAsc(Long parentId);
 }

@@ -3,6 +3,9 @@ package com.raisechat.common.exception;
 import com.raisechat.channel.exception.ChannelConflictException;
 import com.raisechat.channel.exception.ChannelForbiddenException;
 import com.raisechat.channel.exception.ChannelNotFoundException;
+import com.raisechat.dm.exception.DmForbiddenException;
+import com.raisechat.dm.exception.DmNotFoundException;
+import com.raisechat.dm.exception.DmValidationException;
 import com.raisechat.message.exception.MessageForbiddenException;
 import com.raisechat.message.exception.MessageNotFoundException;
 import com.raisechat.user.exception.UserNotFoundException;
@@ -24,7 +27,7 @@ import java.util.Map;
 // auth パッケージの AuthExceptionHandler は Map 形式の旧仕様（後続 Issue で全体移行）。
 // 本ハンドラは新規実装（user / workspace）のみに ProblemDetail を適用するため basePackages でホワイトリスト化。
 // auth は basePackages に含めず、AuthExceptionHandler が引き続き処理する。
-@RestControllerAdvice(basePackages = {"com.raisechat.user", "com.raisechat.workspace", "com.raisechat.channel", "com.raisechat.message"})
+@RestControllerAdvice(basePackages = {"com.raisechat.user", "com.raisechat.workspace", "com.raisechat.channel", "com.raisechat.message", "com.raisechat.dm"})
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class GlobalExceptionHandler {
 
@@ -123,6 +126,36 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
         pd.setType(URI.create(PROBLEM_BASE + "forbidden"));
         pd.setTitle("Forbidden");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(DmNotFoundException.class)
+    public ProblemDetail handleDmNotFound(DmNotFoundException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
+        pd.setType(URI.create(PROBLEM_BASE + "not-found"));
+        pd.setTitle("Resource Not Found");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(DmForbiddenException.class)
+    public ProblemDetail handleDmForbidden(DmForbiddenException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
+        pd.setType(URI.create(PROBLEM_BASE + "forbidden"));
+        pd.setTitle("Forbidden");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(DmValidationException.class)
+    public ProblemDetail handleDmValidation(DmValidationException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
+        pd.setType(URI.create(PROBLEM_BASE + "validation"));
+        pd.setTitle("Validation Failed");
         pd.setDetail(ex.getMessage());
         pd.setInstance(URI.create(req.getRequestURI()));
         return pd;

@@ -7,6 +7,7 @@ import java.time.OffsetDateTime;
 public record MessageResponse(
         Long id,
         Long channelId,
+        Long dmRoomId,
         Long authorId,
         String authorUserId,
         String authorDisplayName,
@@ -20,6 +21,7 @@ public record MessageResponse(
         return new MessageResponse(
                 m.getId(),
                 m.getChannel() != null ? m.getChannel().getId() : null,
+                m.getDmRoom() != null ? m.getDmRoom().getId() : null,
                 m.getAuthor().getId(),
                 m.getAuthor().getUserId(),
                 m.getAuthor().getDisplayName(),
