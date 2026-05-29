@@ -8,9 +8,12 @@ import com.raisechat.channel.ChannelRepository;
 import com.raisechat.dm.DmRoom;
 import com.raisechat.dm.DmRoomRepository;
 import com.raisechat.dm.DmService;
+import com.raisechat.message.dto.AddReactionRequest;
 import com.raisechat.message.dto.EditMessageRequest;
 import com.raisechat.message.dto.MessageListResponse;
 import com.raisechat.message.dto.MessageResponse;
+import com.raisechat.message.dto.ReactionResponse;
+import com.raisechat.message.dto.ReactionResult;
 import com.raisechat.message.dto.ReplyMessageRequest;
 import com.raisechat.message.dto.SendMessageRequest;
 import com.raisechat.message.dto.WsEvent;
@@ -40,6 +43,7 @@ public class MessageService {
     private static final int MAX_LIMIT = 200;
 
     private final MessageRepository messageRepository;
+    private final ReactionRepository reactionRepository;
     private final ChannelRepository channelRepository;
     private final ChannelMemberRepository channelMemberRepository;
     private final DmRoomRepository dmRoomRepository;
@@ -63,6 +67,7 @@ public class MessageService {
 
     public MessageService(
             MessageRepository messageRepository,
+            ReactionRepository reactionRepository,
             ChannelRepository channelRepository,
             ChannelMemberRepository channelMemberRepository,
             DmRoomRepository dmRoomRepository,
@@ -73,6 +78,7 @@ public class MessageService {
             ObjectMapper objectMapper
     ) {
         this.messageRepository = messageRepository;
+        this.reactionRepository = reactionRepository;
         this.channelRepository = channelRepository;
         this.channelMemberRepository = channelMemberRepository;
         this.dmRoomRepository = dmRoomRepository;
@@ -273,6 +279,58 @@ public class MessageService {
         return dto;
     }
 
+    @Transactional
+    public ReactionResult addReaction(Long userId, Long messageId, AddReactionRequest req) {
+        Message message = loadActiveMessage(messageId);
+        requireMessageAccess(message, userId);
+
+        String emoji = req.emoji();
+        boolean created = reactionRepository
+                .findByMessageIdAndUserIdAndEmoji(messageId, userId, emoji)
+                .isEmpty();
+        if (created) {
+            Reaction reaction = new Reaction();
+            reaction.setMessage(message);
+            reaction.setUser(userRepository.getReferenceById(userId));
+            reaction.setEmoji(emoji);
+            reactionRepository.saveAndFlush(reaction);
+        }
+
+        ReactionResponse dto = buildReactionResponse(messageId, emoji);
+        // 既に付与済み（冪等な 200）のときは配信しない。重複イベントで他クライアントのカウントがずれるのを防ぐ。
+        if (created) {
+            publishReactionEvent(message, WsEvent.EventType.REACTION_ADDED, dto);
+        }
+        return new ReactionResult(dto, created);
+    }
+
+    @Transactional
+    public void removeReaction(Long userId, Long messageId, String emoji) {
+        Message message = loadActiveMessage(messageId);
+        requireMessageAccess(message, userId);
+
+        var existing = reactionRepository.findByMessageIdAndUserIdAndEmoji(messageId, userId, emoji);
+        if (existing.isEmpty()) {
+            return; // 冪等: 付与されていなければ何もせず 204 を返す
+        }
+        reactionRepository.delete(existing.get());
+        reactionRepository.flush();
+
+        ReactionResponse dto = buildReactionResponse(messageId, emoji);
+        publishReactionEvent(message, WsEvent.EventType.REACTION_REMOVED, dto);
+    }
+
+    private Message loadActiveMessage(Long messageId) {
+        return messageRepository.findById(messageId)
+                .filter(m -> m.getDeletedAt() == null)
+                .orElseThrow(() -> new MessageNotFoundException(messageId));
+    }
+
+    private ReactionResponse buildReactionResponse(Long messageId, String emoji) {
+        List<Long> userIds = reactionRepository.findUserIdsByMessageIdAndEmoji(messageId, emoji);
+        return new ReactionResponse(messageId, emoji, userIds.size(), userIds);
+    }
+
     // スレッド返信の閲覧 / 投稿は、親メッセージが属するチャンネル / DM のメンバーシップを継承する。
     private void requireMessageAccess(Message parent, Long userId) {
         if (parent.getChannel() != null) {
@@ -288,18 +346,6 @@ public class MessageService {
                         "チャンネルのメンバーではありません: channelId=" + channelId));
     }
 
-    private void publishChannelEvent(Long channelId, WsEvent.EventType type, MessageResponse payload) {
-        publish(redisChannelPrefix + channelId, type, payload);
-    }
-
-    private void publishDmEvent(Long dmRoomId, WsEvent.EventType type, MessageResponse payload) {
-        publish(redisDmPrefix + dmRoomId, type, payload);
-    }
-
-    private void publishThreadEvent(Long parentId, WsEvent.EventType type, MessageResponse payload) {
-        publish(redisThreadPrefix + parentId, type, payload);
-    }
-
     // 親を持つメッセージ（スレッド返信）はスレッドトピックへ、そうでなければチャンネル / DM トピックへ配信する。
     // 配信先を一本化することで、REST 経由の返信と WebSocket 経由の親付き送信が同じトピックに乗る。
     private void publishCreated(Message message, MessageResponse dto) {
@@ -310,17 +356,30 @@ public class MessageService {
         publishMessageEvent(message, type, dto);
     }
 
-    private void publishMessageEvent(Message message, WsEvent.EventType type, MessageResponse dto) {
-        if (message.getParent() != null) {
-            publishThreadEvent(message.getParent().getId(), type, dto);
-        } else if (message.getChannel() != null) {
-            publishChannelEvent(message.getChannel().getId(), type, dto);
-        } else if (message.getDmRoom() != null) {
-            publishDmEvent(message.getDmRoom().getId(), type, dto);
+    // リアクションも、対象メッセージと同じトピック（返信ならスレッド、通常はチャンネル / DM）へ流す。
+    private void publishReactionEvent(Message message, WsEvent.EventType type, ReactionResponse dto) {
+        publishMessageEvent(message, type, dto);
+    }
+
+    private void publishMessageEvent(Message message, WsEvent.EventType type, Object payload) {
+        String topic = resolveTopic(message);
+        if (topic != null) {
+            publish(topic, type, payload);
         }
     }
 
-    private void publish(String topic, WsEvent.EventType type, MessageResponse payload) {
+    private String resolveTopic(Message message) {
+        if (message.getParent() != null) {
+            return redisThreadPrefix + message.getParent().getId();
+        } else if (message.getChannel() != null) {
+            return redisChannelPrefix + message.getChannel().getId();
+        } else if (message.getDmRoom() != null) {
+            return redisDmPrefix + message.getDmRoom().getId();
+        }
+        return null;
+    }
+
+    private void publish(String topic, WsEvent.EventType type, Object payload) {
         try {
             String json = objectMapper.writeValueAsString(new WsEvent(type, payload));
             redisTemplate.convertAndSend(topic, json);
