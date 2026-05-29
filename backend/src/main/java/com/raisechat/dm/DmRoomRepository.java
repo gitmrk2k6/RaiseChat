@@ -36,4 +36,12 @@ public interface DmRoomRepository extends JpaRepository<DmRoom, Long> {
             @Param("userId") Long userId,
             @Param("cursorId") Long cursorId,
             Pageable pageable);
+
+    // 未読再構築用: ユーザーが属する有効な DM ルームの id 一覧（全ワークスペース横断）
+    @Query("""
+            SELECT d.id FROM DmRoom d
+            WHERE d.deletedAt IS NULL
+              AND (d.userA.id = :userId OR d.userB.id = :userId)
+            """)
+    List<Long> findRoomIdsByUserId(@Param("userId") Long userId);
 }

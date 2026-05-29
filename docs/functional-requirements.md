@@ -23,7 +23,7 @@
 | MVP | F-11 | 絵文字リアクション機能 | メッセージへの絵文字リアクション | ⏳ 未着手 |
 | MVP | F-12 | メンション機能 | `@user` でユーザーを呼び出し | ⏳ 未着手 |
 | MVP | F-13 | メッセージ検索機能 | ワークスペース内のメッセージ全文検索 | ⏳ 未着手 |
-| MVP | F-14 | 通知機能 | 未読メッセージ数・メンション通知 | ⏳ 未着手 |
+| MVP | F-14 | 通知機能 | 未読メッセージ数・メンション通知 | 🚧 未読数のみ実装済（Redis カウンタ + 既読 API + WS 通知）。メンションバッジは F-12 後 |
 | MVP | F-15 | 招待機能 | オーナーがユーザーをワークスペース / チャンネルに招待 | 🚧 ワークスペース招待のみ実装済（チャンネル招待は別 Issue） |
 | MVP | F-16 | 管理者操作機能 | オーナーによるユーザーキック・チャンネル削除 | ⏳ 未着手 |
 
@@ -353,11 +353,14 @@
 - メンションされた場合、サイドバーのチャンネル名にメンションバッジを付与
 - ブラウザ通知（Notifications API）でも知らせる（任意で有効化）
 
-**関連エンドポイント / WebSocket destination（仮）**
+**関連エンドポイント / WebSocket destination**（✅ 未読数を実装済）
 
-- `GET /api/notifications/unread`
-- `POST /api/channels/{id}/read`
-- WebSocket subscribe: `/user/queue/notifications`
+- `GET /api/notifications/unread` — 未読のあるチャンネル / DM の一覧（cache-aside。Redis ミス時は Postgres から再構築）
+- `POST /api/channels/{id}/read` — チャンネルを既読化（body 省略で最新まで）
+- `POST /api/dm/rooms/{id}/read` — DM を既読化
+- WebSocket subscribe: `/user/queue/notifications`（`notifications:{userId}` の Redis pub/sub 経由で配信）
+
+> 実装メモ: 未読は「真実 = `read_states.last_read_message_id`（Postgres）／キャッシュ = `unread:{userId}` Hash（Redis）」の 2 層。新着は書き込み時にメンバー全員へファンアウト（HINCRBY）。メンションバッジは F-12 完了後に追加。
 
 ---
 

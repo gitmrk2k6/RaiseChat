@@ -43,6 +43,7 @@ app:
     channel-prefix: "messages:channel:"
     dm-prefix: "messages:dm:"
     thread-prefix: "messages:thread:"
+    notification-prefix: "notifications:"
   invite:
     # 招待リンクのベース URL。発行レスポンスの inviteUrl を「base-url/{token}」で組み立てる。
     base-url: ${INVITE_BASE_URL:http://localhost:3000/invite}
