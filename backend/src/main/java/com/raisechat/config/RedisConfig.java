@@ -1,6 +1,7 @@
 package com.raisechat.config;
 
 import com.raisechat.message.ws.MessageChannelRedisSubscriber;
+import com.raisechat.message.ws.MessageDmRedisSubscriber;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,6 +16,9 @@ public class RedisConfig {
     @Value("${app.redis.channel-prefix:messages:channel:}")
     private String channelPrefix;
 
+    @Value("${app.redis.dm-prefix:messages:dm:}")
+    private String dmPrefix;
+
     @Bean
     public StringRedisTemplate stringRedisTemplate(RedisConnectionFactory factory) {
         return new StringRedisTemplate(factory);
@@ -23,11 +27,13 @@ public class RedisConfig {
     @Bean
     public RedisMessageListenerContainer redisMessageListenerContainer(
             RedisConnectionFactory factory,
-            MessageChannelRedisSubscriber subscriber
+            MessageChannelRedisSubscriber channelSubscriber,
+            MessageDmRedisSubscriber dmSubscriber
     ) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(factory);
-        container.addMessageListener(subscriber, new PatternTopic(channelPrefix + "*"));
+        container.addMessageListener(channelSubscriber, new PatternTopic(channelPrefix + "*"));
+        container.addMessageListener(dmSubscriber, new PatternTopic(dmPrefix + "*"));
         return container;
     }
 }
