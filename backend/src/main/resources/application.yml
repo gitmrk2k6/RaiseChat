@@ -22,6 +22,10 @@ spring:
     # 「履歴にあるのにファイルが見つからない」検証エラーで落ちないようにする。
     # 影響範囲を Repeatable migration に限定し、V__ には適用しない。
     ignore-migration-patterns: "repeatable:missing"
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 server:
   port: 8080
@@ -31,6 +35,12 @@ jwt:
   secret: ${JWT_SECRET:dev-secret-change-me-this-is-at-least-32-bytes-long}
   access-ttl-seconds: 900       # 15 分
   refresh-ttl-seconds: 604800   # 7 日
+
+app:
+  ws:
+    allowed-origins: ${WS_ALLOWED_ORIGINS:http://localhost:3000}
+  redis:
+    channel-prefix: "messages:channel:"
 
 logging:
   level:
