@@ -9,6 +9,7 @@ import com.raisechat.dm.DmRoom;
 import com.raisechat.dm.DmRoomRepository;
 import com.raisechat.dm.DmService;
 import com.raisechat.dm.exception.DmNotFoundException;
+import com.raisechat.message.MentionRepository;
 import com.raisechat.message.Message;
 import com.raisechat.message.MessageRepository;
 import com.raisechat.message.ReadState;
@@ -24,8 +25,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * F-14 未読数の中核。Postgres（read_states）を真実、Redis（unread:{userId}）をキャッシュとする
@@ -39,6 +42,7 @@ public class NotificationService {
     private final DmRoomRepository dmRoomRepository;
     private final DmService dmService;
     private final MessageRepository messageRepository;
+    private final MentionRepository mentionRepository;
     private final ReadStateRepository readStateRepository;
     private final UserRepository userRepository;
     private final UnreadCounterStore store;
@@ -50,6 +54,7 @@ public class NotificationService {
             DmRoomRepository dmRoomRepository,
             DmService dmService,
             MessageRepository messageRepository,
+            MentionRepository mentionRepository,
             ReadStateRepository readStateRepository,
             UserRepository userRepository,
             UnreadCounterStore store,
@@ -60,6 +65,7 @@ public class NotificationService {
         this.dmRoomRepository = dmRoomRepository;
         this.dmService = dmService;
         this.messageRepository = messageRepository;
+        this.mentionRepository = mentionRepository;
         this.readStateRepository = readStateRepository;
         this.userRepository = userRepository;
         this.store = store;
@@ -70,35 +76,42 @@ public class NotificationService {
     // 書き込み時ファンアウト（MessageService から呼ばれる）
     // ============================================================
 
-    /** 新着メッセージを受信者全員の未読カウンタへ加算し、WS 通知を発行する。 */
+    /**
+     * 新着メッセージを受信者全員の未読カウンタへ加算し、WS 通知を発行する。
+     * メンション先（mentionedUserIds）に含まれる受信者は、別軸のメンションカウンタも +1 する。
+     */
     @Transactional
-    public void onNewMessage(Message message) {
+    public void onNewMessage(Message message, List<Long> mentionedUserIds) {
+        Set<Long> mentioned = new HashSet<>(mentionedUserIds);
         if (message.getChannel() != null) {
-            fanOutChannel(message.getChannel().getId(), message.getAuthor().getId());
+            fanOutChannel(message.getChannel().getId(), message.getAuthor().getId(), mentioned);
         } else if (message.getDmRoom() != null) {
-            fanOutDm(message.getDmRoom().getId(), message.getAuthor().getId());
+            fanOutDm(message.getDmRoom().getId(), message.getAuthor().getId(), mentioned);
         }
     }
 
-    private void fanOutChannel(Long channelId, Long authorId) {
+    private void fanOutChannel(Long channelId, Long authorId, Set<Long> mentioned) {
         String field = UnreadCounterStore.channelField(channelId);
         for (Long memberId : channelMemberRepository.findActiveUserIdsByChannelId(channelId)) {
-            incrementAndNotify(memberId, authorId, field, UnreadItem.SCOPE_CHANNEL, channelId);
+            incrementAndNotify(memberId, authorId, field, UnreadItem.SCOPE_CHANNEL, channelId,
+                    mentioned.contains(memberId));
         }
     }
 
-    private void fanOutDm(Long dmRoomId, Long authorId) {
+    private void fanOutDm(Long dmRoomId, Long authorId, Set<Long> mentioned) {
         DmRoom room = dmRoomRepository.findActiveByIdWithUsers(dmRoomId).orElse(null);
         if (room == null) {
             return;
         }
         String field = UnreadCounterStore.dmField(dmRoomId);
         for (Long memberId : List.of(room.getUserA().getId(), room.getUserB().getId())) {
-            incrementAndNotify(memberId, authorId, field, UnreadItem.SCOPE_DM, dmRoomId);
+            incrementAndNotify(memberId, authorId, field, UnreadItem.SCOPE_DM, dmRoomId,
+                    mentioned.contains(memberId));
         }
     }
 
-    private void incrementAndNotify(Long memberId, Long authorId, String field, String scopeType, Long scopeId) {
+    private void incrementAndNotify(
+            Long memberId, Long authorId, String field, String scopeType, Long scopeId, boolean isMentioned) {
         if (memberId.equals(authorId)) {
             return; // 自分の投稿は自分の未読にならない
         }
@@ -108,8 +121,12 @@ public class NotificationService {
             return;
         }
         long count = store.increment(memberId, field);
-        publisher.publish(memberId,
-                new NotificationEvent(NotificationEvent.EventType.UNREAD_UPDATED, scopeType, scopeId, count));
+        // メンション先なら +1、そうでなければ現在値をそのまま WS イベントへ載せる（イベントを自己完結させる）。
+        long mentionCount = isMentioned
+                ? store.incrementMention(memberId, field)
+                : store.getMention(memberId, field);
+        publisher.publish(memberId, new NotificationEvent(
+                NotificationEvent.EventType.UNREAD_UPDATED, scopeType, scopeId, count, mentionCount));
     }
 
     // ============================================================
@@ -126,14 +143,17 @@ public class NotificationService {
         String field = UnreadCounterStore.channelField(channelId);
         if (targetId == 0L) {
             store.set(userId, field, 0L); // メッセージ皆無。未読 0 を保証して終了。
+            store.setMention(userId, field, 0L);
             return;
         }
 
         ReadState state = upsertChannelReadState(userId, channel, targetId);
-        long residual = messageRepository.countChannelUnread(
-                channelId, userId, state.getLastReadMessage().getId());
+        long lastReadId = state.getLastReadMessage().getId();
+        long residual = messageRepository.countChannelUnread(channelId, userId, lastReadId);
+        long mentionResidual = mentionRepository.countChannelMentionUnread(channelId, userId, lastReadId);
         store.set(userId, field, residual);
-        publishRead(userId, UnreadItem.SCOPE_CHANNEL, channelId, residual);
+        store.setMention(userId, field, mentionResidual);
+        publishRead(userId, UnreadItem.SCOPE_CHANNEL, channelId, residual, mentionResidual);
     }
 
     @Transactional
@@ -146,14 +166,17 @@ public class NotificationService {
         String field = UnreadCounterStore.dmField(dmRoomId);
         if (targetId == 0L) {
             store.set(userId, field, 0L);
+            store.setMention(userId, field, 0L);
             return;
         }
 
         ReadState state = upsertDmReadState(userId, room, targetId);
-        long residual = messageRepository.countDmUnread(
-                dmRoomId, userId, state.getLastReadMessage().getId());
+        long lastReadId = state.getLastReadMessage().getId();
+        long residual = messageRepository.countDmUnread(dmRoomId, userId, lastReadId);
+        long mentionResidual = mentionRepository.countDmMentionUnread(dmRoomId, userId, lastReadId);
         store.set(userId, field, residual);
-        publishRead(userId, UnreadItem.SCOPE_DM, dmRoomId, residual);
+        store.setMention(userId, field, mentionResidual);
+        publishRead(userId, UnreadItem.SCOPE_DM, dmRoomId, residual, mentionResidual);
     }
 
     // ============================================================
@@ -165,10 +188,13 @@ public class NotificationService {
         if (!store.isSynced(userId)) {
             rebuild(userId);
         }
+        Map<String, Long> unreadByField = store.getAll(userId);
+        Map<String, Long> mentionByField = store.getAllMentions(userId);
         List<UnreadItem> items = new ArrayList<>();
-        store.getAll(userId).forEach((field, count) -> {
-            if (count > 0) {
-                UnreadItem item = toItem(field, count);
+        unreadByField.forEach((field, count) -> {
+            long mention = mentionByField.getOrDefault(field, 0L);
+            if (count > 0 || mention > 0) {
+                UnreadItem item = toItem(field, count, mention);
                 if (item != null) {
                     items.add(item);
                 }
@@ -177,9 +203,10 @@ public class NotificationService {
         return new UnreadResponse(items);
     }
 
-    /** キャッシュミス時に Postgres から未読数を再構築して Redis へ書き込む。 */
+    /** キャッシュミス時に Postgres から未読数・メンション数を再構築して Redis へ書き込む。 */
     private void rebuild(Long userId) {
         Map<String, Long> snapshot = new HashMap<>();
+        Map<String, Long> mentionSnapshot = new HashMap<>();
 
         Map<Long, Long> channelLastRead = new HashMap<>();
         for (ReadState rs : readStateRepository.findByUserIdAndChannelIdIsNotNull(userId)) {
@@ -187,9 +214,14 @@ public class NotificationService {
         }
         for (Long channelId : channelMemberRepository.findActiveChannelIdsByUserId(userId)) {
             long lastRead = channelLastRead.getOrDefault(channelId, 0L);
+            String field = UnreadCounterStore.channelField(channelId);
             long count = messageRepository.countChannelUnread(channelId, userId, lastRead);
             if (count > 0) {
-                snapshot.put(UnreadCounterStore.channelField(channelId), count);
+                snapshot.put(field, count);
+            }
+            long mention = mentionRepository.countChannelMentionUnread(channelId, userId, lastRead);
+            if (mention > 0) {
+                mentionSnapshot.put(field, mention);
             }
         }
 
@@ -199,13 +231,18 @@ public class NotificationService {
         }
         for (Long dmRoomId : dmRoomRepository.findRoomIdsByUserId(userId)) {
             long lastRead = dmLastRead.getOrDefault(dmRoomId, 0L);
+            String field = UnreadCounterStore.dmField(dmRoomId);
             long count = messageRepository.countDmUnread(dmRoomId, userId, lastRead);
             if (count > 0) {
-                snapshot.put(UnreadCounterStore.dmField(dmRoomId), count);
+                snapshot.put(field, count);
+            }
+            long mention = mentionRepository.countDmMentionUnread(dmRoomId, userId, lastRead);
+            if (mention > 0) {
+                mentionSnapshot.put(field, mention);
             }
         }
 
-        store.writeSnapshot(userId, snapshot);
+        store.writeSnapshot(userId, snapshot, mentionSnapshot);
     }
 
     // ============================================================
@@ -274,14 +311,15 @@ public class NotificationService {
                         "チャンネルのメンバーではありません: channelId=" + channelId));
     }
 
-    private void publishRead(Long userId, String scopeType, Long scopeId, long residual) {
+    private void publishRead(Long userId, String scopeType, Long scopeId, long residual, long mentionResidual) {
+        // イベント種別は総未読基準のまま（メンションは内数）。
         NotificationEvent.EventType type = residual == 0
                 ? NotificationEvent.EventType.UNREAD_CLEARED
                 : NotificationEvent.EventType.UNREAD_UPDATED;
-        publisher.publish(userId, new NotificationEvent(type, scopeType, scopeId, residual));
+        publisher.publish(userId, new NotificationEvent(type, scopeType, scopeId, residual, mentionResidual));
     }
 
-    private UnreadItem toItem(String field, long count) {
+    private UnreadItem toItem(String field, long count, long mentionCount) {
         int sep = field.indexOf(':');
         if (sep < 0) {
             return null;
@@ -289,7 +327,7 @@ public class NotificationService {
         String scopeType = field.substring(0, sep);
         try {
             Long scopeId = Long.parseLong(field.substring(sep + 1));
-            return new UnreadItem(scopeType, scopeId, count);
+            return new UnreadItem(scopeType, scopeId, count, mentionCount);
         } catch (NumberFormatException e) {
             return null;
         }
