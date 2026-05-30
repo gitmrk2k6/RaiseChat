@@ -56,6 +56,16 @@ public class WorkspaceController {
         return workspaceService.getDetail(principal.id(), wsId);
     }
 
+    // F-16 ワークスペース削除: ワークスペースを論理削除する（OWNER のみ）。
+    @DeleteMapping("/{wsId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable Long wsId
+    ) {
+        workspaceService.delete(principal.id(), wsId);
+    }
+
     // 招待リンクを発行する（OWNER のみ）。ボディは任意（{} で既定値）。
     @PostMapping("/{wsId}/invites")
     @ResponseStatus(HttpStatus.CREATED)
