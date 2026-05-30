@@ -26,6 +26,31 @@ public interface MentionRepository extends JpaRepository<Mention, Long> {
             """)
     List<MentionUserView> findByMessageIdIn(@Param("messageIds") List<Long> messageIds);
 
+    // F-14 メンションバッジ rebuild / 既読 reset 用: 指定ユーザー宛で lastReadMessageId より新しい未読メンション数。
+    @Query("""
+            SELECT COUNT(m) FROM Mention m
+            WHERE m.mentionedUser.id = :userId
+              AND m.message.channel.id = :channelId
+              AND m.message.deletedAt IS NULL
+              AND m.message.id > :lastReadMessageId
+            """)
+    long countChannelMentionUnread(
+            @Param("channelId") Long channelId,
+            @Param("userId") Long userId,
+            @Param("lastReadMessageId") long lastReadMessageId);
+
+    @Query("""
+            SELECT COUNT(m) FROM Mention m
+            WHERE m.mentionedUser.id = :userId
+              AND m.message.dmRoom.id = :dmRoomId
+              AND m.message.deletedAt IS NULL
+              AND m.message.id > :lastReadMessageId
+            """)
+    long countDmMentionUnread(
+            @Param("dmRoomId") Long dmRoomId,
+            @Param("userId") Long userId,
+            @Param("lastReadMessageId") long lastReadMessageId);
+
     interface MentionUserView {
         Long getMessageId();
         Long getUserId();

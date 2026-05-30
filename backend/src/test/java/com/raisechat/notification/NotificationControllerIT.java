@@ -6,6 +6,7 @@ import com.raisechat.channel.Channel;
 import com.raisechat.channel.ChannelRepository;
 import com.raisechat.dm.DmRoom;
 import com.raisechat.dm.DmRoomRepository;
+import com.raisechat.message.MentionRepository;
 import com.raisechat.message.Message;
 import com.raisechat.message.MessageRepository;
 import com.raisechat.user.User;
@@ -22,6 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -48,6 +50,7 @@ class NotificationControllerIT {
 
     private static final String OWNER = "keisuke";
     private static final String MEMBER = "haruka";
+    private static final String THIRD_MEMBER = "ryo"; // general の別メンバー（メンション対象外の検証用）
     private static final String NON_MEMBER = "mika";
     private static final String PASSWORD = "password";
 
@@ -70,6 +73,9 @@ class NotificationControllerIT {
     private DmRoomRepository dmRoomRepository;
 
     @Autowired
+    private MentionRepository mentionRepository;
+
+    @Autowired
     private StringRedisTemplate redisTemplate;
 
     @BeforeEach
@@ -77,6 +83,11 @@ class NotificationControllerIT {
         Set<String> keys = redisTemplate.keys("unread:*");
         if (keys != null && !keys.isEmpty()) {
             redisTemplate.delete(keys);
+        }
+        // メンションカウンタも別 Hash（mention:{userId}）なので併せて掃除する。
+        Set<String> mentionKeys = redisTemplate.keys("mention:*");
+        if (mentionKeys != null && !mentionKeys.isEmpty()) {
+            redisTemplate.delete(mentionKeys);
         }
     }
 
@@ -186,6 +197,67 @@ class NotificationControllerIT {
     }
 
     // ============================================================
+    // F-14 メンションバッジ（mention 未読カウンタ）
+    // ============================================================
+
+    @Test
+    void mentionFansOutToMentionedMemberOnly() throws Exception {
+        Long parentId = createChannelMessage(OWNER, CH_GENERAL, "スレッド親");
+        String harukaToken = login(MEMBER);
+        String ryoToken = login(THIRD_MEMBER);
+
+        // 両者を同期（コールドだとファンアウトはスキップされる仕様）
+        long harukaUnreadBefore = unreadFor(harukaToken, "channel", CH_GENERAL);
+        long ryoUnreadBefore = unreadFor(ryoToken, "channel", CH_GENERAL);
+        long harukaMentionBefore = mentionFor(harukaToken, "channel", CH_GENERAL);
+        long ryoMentionBefore = mentionFor(ryoToken, "channel", CH_GENERAL);
+
+        // OWNER が @haruka を含む返信を送る
+        replyAs(login(OWNER), parentId, "@" + MEMBER + " 見てください");
+
+        // haruka: 総未読 +1 かつ メンション +1
+        assertEquals(harukaUnreadBefore + 1, unreadFor(harukaToken, "channel", CH_GENERAL));
+        assertEquals(harukaMentionBefore + 1, mentionFor(harukaToken, "channel", CH_GENERAL));
+
+        // ryo: 総未読 +1 だが メンションは増えない
+        assertEquals(ryoUnreadBefore + 1, unreadFor(ryoToken, "channel", CH_GENERAL));
+        assertEquals(ryoMentionBefore, mentionFor(ryoToken, "channel", CH_GENERAL));
+    }
+
+    @Test
+    void markChannelReadClearsMention() throws Exception {
+        Long parentId = createChannelMessage(OWNER, CH_GENERAL, "スレッド親");
+        String token = login(MEMBER);
+        long mentionBefore = mentionFor(token, "channel", CH_GENERAL); // 同期
+
+        replyAs(login(OWNER), parentId, "@" + MEMBER + " 確認お願いします");
+        assertEquals(mentionBefore + 1, mentionFor(token, "channel", CH_GENERAL));
+
+        // 最新まで既読 → メンションもゼロクリア
+        mockMvc.perform(post("/api/channels/" + CH_GENERAL + "/read")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNoContent());
+
+        assertEquals(0L, mentionFor(token, "channel", CH_GENERAL));
+    }
+
+    @Test
+    void getUnreadColdRebuildsMentionFromPostgres() throws Exception {
+        Long parentId = createChannelMessage(OWNER, CH_GENERAL, "スレッド親");
+        // haruka がコールドのうちに @haruka 返信を送る（ファンアウトはスキップされ Postgres にのみ残る）
+        replyAs(login(OWNER), parentId, "@" + MEMBER + " あとで見てね");
+
+        String token = login(MEMBER);
+        Long memberId = userRepository.findByUserId(MEMBER).orElseThrow().getId();
+
+        // 初回 GET の rebuild は Postgres の COUNT と一致するはず
+        long expected = mentionRepository.countChannelMentionUnread(CH_GENERAL, memberId, 0L);
+        assert expected >= 1;
+
+        assertEquals(expected, mentionFor(token, "channel", CH_GENERAL));
+    }
+
+    // ============================================================
     // POST /api/dm/rooms/{id}/read
     // ============================================================
 
@@ -218,6 +290,15 @@ class NotificationControllerIT {
 
     // GET /api/notifications/unread を呼び、指定スコープの未読数を返す（無ければ 0）。
     private long unreadFor(String token, String scopeType, long scopeId) throws Exception {
+        return scopeCountFor(token, scopeType, scopeId, "unreadCount");
+    }
+
+    // GET /api/notifications/unread を呼び、指定スコープのメンション未読数を返す（無ければ 0）。
+    private long mentionFor(String token, String scopeType, long scopeId) throws Exception {
+        return scopeCountFor(token, scopeType, scopeId, "mentionCount");
+    }
+
+    private long scopeCountFor(String token, String scopeType, long scopeId, String field) throws Exception {
         MvcResult result = mockMvc.perform(get("/api/notifications/unread")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
@@ -226,10 +307,19 @@ class NotificationControllerIT {
         for (JsonNode item : items) {
             if (scopeType.equals(item.get("scopeType").asText())
                     && item.get("scopeId").asLong() == scopeId) {
-                return item.get("unreadCount").asLong();
+                return item.get(field).asLong();
             }
         }
         return 0L;
+    }
+
+    // 返信 API 経由で投稿する（syncMentions → onNewMessage が走るのでメンションのファンアウトを検証できる）。
+    private void replyAs(String token, Long parentId, String body) throws Exception {
+        mockMvc.perform(post("/api/messages/" + parentId + "/replies")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("body", body))))
+                .andExpect(status().isCreated());
     }
 
     private Long createChannelMessage(String userId, Long channelId, String body) {

@@ -163,7 +163,7 @@ public class MessageService {
 
         List<Long> mentionedUserIds = mentionService.syncMentions(message);
         MessageResponse dto = MessageResponse.from(message, mentionedUserIds);
-        publishCreated(message, dto);
+        publishCreated(message, dto, mentionedUserIds);
         return dto;
     }
 
@@ -191,7 +191,7 @@ public class MessageService {
 
         List<Long> mentionedUserIds = mentionService.syncMentions(message);
         MessageResponse dto = MessageResponse.from(message, mentionedUserIds);
-        publishCreated(message, dto);
+        publishCreated(message, dto, mentionedUserIds);
         return dto;
     }
 
@@ -288,7 +288,7 @@ public class MessageService {
 
         List<Long> mentionedUserIds = mentionService.syncMentions(message);
         MessageResponse dto = MessageResponse.from(message, mentionedUserIds);
-        publishCreated(message, dto);
+        publishCreated(message, dto, mentionedUserIds);
         return dto;
     }
 
@@ -361,10 +361,11 @@ public class MessageService {
 
     // 親を持つメッセージ（スレッド返信）はスレッドトピックへ、そうでなければチャンネル / DM トピックへ配信する。
     // 配信先を一本化することで、REST 経由の返信と WebSocket 経由の親付き送信が同じトピックに乗る。
-    private void publishCreated(Message message, MessageResponse dto) {
+    private void publishCreated(Message message, MessageResponse dto, List<Long> mentionedUserIds) {
         publishMessageEvent(message, WsEvent.EventType.MESSAGE_CREATED, dto);
         // F-14: 新着を受信者の未読カウンタへファンアウト（同一トランザクション内）。
-        notificationService.onNewMessage(message);
+        // メンション先（mentionedUserIds）はメンションバッジも +1 される。
+        notificationService.onNewMessage(message, mentionedUserIds);
     }
 
     private void publishEditDeleteEvent(Message message, WsEvent.EventType type, MessageResponse dto) {
