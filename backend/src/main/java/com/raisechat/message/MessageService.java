@@ -35,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class MessageService {
@@ -52,6 +53,7 @@ public class MessageService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final MentionService mentionService;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
@@ -77,6 +79,7 @@ public class MessageService {
             WorkspaceMemberRepository workspaceMemberRepository,
             UserRepository userRepository,
             NotificationService notificationService,
+            MentionService mentionService,
             StringRedisTemplate redisTemplate,
             ObjectMapper objectMapper
     ) {
@@ -89,6 +92,7 @@ public class MessageService {
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
+        this.mentionService = mentionService;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
     }
@@ -108,7 +112,7 @@ public class MessageService {
         boolean hasMore = rows.size() > effectiveLimit;
         List<Message> page = hasMore ? rows.subList(0, effectiveLimit) : rows;
 
-        List<MessageResponse> items = page.stream().map(MessageResponse::from).toList();
+        List<MessageResponse> items = toResponses(page);
         String nextCursor = hasMore ? String.valueOf(page.get(page.size() - 1).getId()) : null;
 
         return new MessageListResponse(items, nextCursor, hasMore);
@@ -129,7 +133,7 @@ public class MessageService {
         boolean hasMore = rows.size() > effectiveLimit;
         List<Message> page = hasMore ? rows.subList(0, effectiveLimit) : rows;
 
-        List<MessageResponse> items = page.stream().map(MessageResponse::from).toList();
+        List<MessageResponse> items = toResponses(page);
         String nextCursor = hasMore ? String.valueOf(page.get(page.size() - 1).getId()) : null;
 
         return new MessageListResponse(items, nextCursor, hasMore);
@@ -157,7 +161,8 @@ public class MessageService {
         messageRepository.saveAndFlush(message);
         entityManager.refresh(message);
 
-        MessageResponse dto = MessageResponse.from(message);
+        List<Long> mentionedUserIds = mentionService.syncMentions(message);
+        MessageResponse dto = MessageResponse.from(message, mentionedUserIds);
         publishCreated(message, dto);
         return dto;
     }
@@ -184,7 +189,8 @@ public class MessageService {
         messageRepository.saveAndFlush(message);
         entityManager.refresh(message);
 
-        MessageResponse dto = MessageResponse.from(message);
+        List<Long> mentionedUserIds = mentionService.syncMentions(message);
+        MessageResponse dto = MessageResponse.from(message, mentionedUserIds);
         publishCreated(message, dto);
         return dto;
     }
@@ -204,7 +210,9 @@ public class MessageService {
         messageRepository.saveAndFlush(message);
         entityManager.refresh(message);
 
-        MessageResponse dto = MessageResponse.from(message);
+        // 編集後の本文に合わせてメンションを再同期する。
+        List<Long> mentionedUserIds = mentionService.syncMentions(message);
+        MessageResponse dto = MessageResponse.from(message, mentionedUserIds);
         publishEditDeleteEvent(message, WsEvent.EventType.MESSAGE_EDITED, dto);
         return dto;
     }
@@ -251,7 +259,7 @@ public class MessageService {
         boolean hasMore = rows.size() > effectiveLimit;
         List<Message> page = hasMore ? rows.subList(0, effectiveLimit) : rows;
 
-        List<MessageResponse> items = page.stream().map(MessageResponse::from).toList();
+        List<MessageResponse> items = toResponses(page);
         String nextCursor = hasMore ? String.valueOf(page.get(page.size() - 1).getId()) : null;
 
         return new MessageListResponse(items, nextCursor, hasMore);
@@ -278,7 +286,8 @@ public class MessageService {
         messageRepository.saveAndFlush(message);
         entityManager.refresh(message);
 
-        MessageResponse dto = MessageResponse.from(message);
+        List<Long> mentionedUserIds = mentionService.syncMentions(message);
+        MessageResponse dto = MessageResponse.from(message, mentionedUserIds);
         publishCreated(message, dto);
         return dto;
     }
@@ -392,6 +401,15 @@ public class MessageService {
         } catch (JsonProcessingException e) {
             log.error("Redis publish failed for topic={}: {}", topic, e.getMessage(), e);
         }
+    }
+
+    // メンション先を 1 クエリで一括ロードしてから DTO 化する（メッセージごとの N+1 を避ける）。
+    private List<MessageResponse> toResponses(List<Message> page) {
+        List<Long> messageIds = page.stream().map(Message::getId).toList();
+        Map<Long, List<Long>> mentions = mentionService.findMentionsByMessageIds(messageIds);
+        return page.stream()
+                .map(m -> MessageResponse.from(m, mentions.getOrDefault(m.getId(), List.of())))
+                .toList();
     }
 
     private int clampLimit(Integer limit) {
