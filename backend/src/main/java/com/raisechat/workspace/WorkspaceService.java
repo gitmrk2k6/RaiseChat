@@ -5,6 +5,7 @@ import com.raisechat.channel.ChannelMember;
 import com.raisechat.channel.ChannelMemberRepository;
 import com.raisechat.channel.ChannelRepository;
 import com.raisechat.channel.ChannelType;
+import com.raisechat.notification.UnreadCounterStore;
 import com.raisechat.user.User;
 import com.raisechat.user.UserRepository;
 import com.raisechat.workspace.dto.CreateInviteRequest;
@@ -15,7 +16,9 @@ import com.raisechat.workspace.dto.WorkspaceListResponse;
 import com.raisechat.workspace.dto.WorkspaceResponse;
 import com.raisechat.workspace.exception.InviteGoneException;
 import com.raisechat.workspace.exception.InviteNotFoundException;
+import com.raisechat.workspace.exception.WorkspaceConflictException;
 import com.raisechat.workspace.exception.WorkspaceForbiddenException;
+import com.raisechat.workspace.exception.WorkspaceMemberNotFoundException;
 import com.raisechat.workspace.exception.WorkspaceNotFoundException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -43,6 +46,7 @@ public class WorkspaceService {
     private final ChannelMemberRepository channelMemberRepository;
     private final UserRepository userRepository;
     private final InviteTokenService inviteTokenService;
+    private final UnreadCounterStore unreadCounterStore;
 
     // 招待 URL の組み立てに使うフロントエンドのベース URL。
     @Value("${app.invite.base-url:http://localhost:3000/invite}")
@@ -59,7 +63,8 @@ public class WorkspaceService {
             ChannelRepository channelRepository,
             ChannelMemberRepository channelMemberRepository,
             UserRepository userRepository,
-            InviteTokenService inviteTokenService
+            InviteTokenService inviteTokenService,
+            UnreadCounterStore unreadCounterStore
     ) {
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -68,6 +73,7 @@ public class WorkspaceService {
         this.channelMemberRepository = channelMemberRepository;
         this.userRepository = userRepository;
         this.inviteTokenService = inviteTokenService;
+        this.unreadCounterStore = unreadCounterStore;
     }
 
     @Transactional
@@ -209,6 +215,36 @@ public class WorkspaceService {
 
         if (invite.getRevokedAt() == null) {
             invite.setRevokedAt(OffsetDateTime.now());
+        }
+    }
+
+    // ---------- 管理者操作 (F-16: ユーザーキック) ----------
+
+    // ワークスペースから対象ユーザーをキックする。OWNER のみ。
+    // 対象の workspace_members.left_at と、当該 WS 内の対象ユーザー全 channel_members.left_at を
+    // 論理退出としてセットし、対象ユーザーの Redis 未読/メンションカウンタからも該当チャンネルを消す。
+    @Transactional
+    public void kickMember(Long requesterId, Long workspaceId, Long targetUserId) {
+        workspaceRepository.findByIdAndDeletedAtIsNull(workspaceId)
+                .orElseThrow(() -> new WorkspaceNotFoundException(workspaceId));
+        requireWorkspaceOwner(workspaceId, requesterId);
+
+        // OWNER が自分自身をキックするのは不正（最後の OWNER 消失や自己ロックアウトを防ぐ）→ 409。
+        if (requesterId.equals(targetUserId)) {
+            throw new WorkspaceConflictException("自分自身をキックすることはできません: workspaceId=" + workspaceId);
+        }
+
+        WorkspaceMember target = workspaceMemberRepository
+                .findByWorkspaceIdAndUserIdAndLeftAtIsNull(workspaceId, targetUserId)
+                .orElseThrow(() -> new WorkspaceMemberNotFoundException(workspaceId, targetUserId));
+
+        OffsetDateTime now = OffsetDateTime.now();
+        target.setLeftAt(now);
+
+        // WS 内の対象ユーザーの全チャンネルメンバーシップを論理退出させ、未読バッジを消す。
+        for (ChannelMember cm : channelMemberRepository.findActiveByWorkspaceIdAndUserId(workspaceId, targetUserId)) {
+            cm.setLeftAt(now);
+            unreadCounterStore.clear(targetUserId, UnreadCounterStore.channelField(cm.getChannel().getId()));
         }
     }
 

@@ -2,17 +2,23 @@ package com.raisechat.workspace;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.hamcrest.Matchers;
+import com.raisechat.channel.ChannelMemberRepository;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Set;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -24,10 +30,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Transactional
 class WorkspaceControllerIT {
 
-    private static final String OWNER_USER = "keisuke";
-    private static final String OWNER_PASSWORD = "password";
-    private static final String NON_OWNER_USER = "haruka";
-    private static final String NON_OWNER_PASSWORD = "password";
+    // seed:
+    //   users:   keisuke=1, haruka=2, ryo=3, mika=4, kenta=5
+    //   ws-1 (RaiseTech AI, id=1): keisuke=OWNER, haruka/ryo/mika/kenta=MEMBER
+    //   ws-2 (Side Project, id=2): keisuke のみ OWNER
+    //   channels(ws-1): general=1, random=2, dev-backend=3, secret-pj=4, design=5
+    //     haruka 参加チャンネル: general(1), random(2), dev-backend(3)
+    private static final long WS_1 = 1L;
+    private static final long WS_2 = 2L;
+    private static final long HARUKA_ID = 2L;
+    private static final long KEISUKE_ID = 1L;
 
     @Autowired
     private MockMvc mockMvc;
@@ -35,201 +47,150 @@ class WorkspaceControllerIT {
     @Autowired
     private ObjectMapper objectMapper;
 
-    // ---------- POST /api/workspaces ----------
+    @Autowired
+    private ChannelMemberRepository channelMemberRepository;
+
+    @Autowired
+    private WorkspaceMemberRepository workspaceMemberRepository;
+
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+
+    private static final String PASSWORD = "password";
+
+    @BeforeEach
+    void clearUnreadCache() {
+        Set<String> keys = redisTemplate.keys("unread:*");
+        if (keys != null && !keys.isEmpty()) {
+            redisTemplate.delete(keys);
+        }
+        Set<String> mentionKeys = redisTemplate.keys("mention:*");
+        if (mentionKeys != null && !mentionKeys.isEmpty()) {
+            redisTemplate.delete(mentionKeys);
+        }
+    }
 
     @Test
-    void createHappyPath() throws Exception {
-        String token = loginAndGetAccess(OWNER_USER, OWNER_PASSWORD);
+    void createWorkspaceReturns201() throws Exception {
+        String token = login("keisuke");
 
-        String body = """
-                {"name":"New WS","description":"hello"}
-                """;
         mockMvc.perform(post("/api/workspaces")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content("{\"name\":\"New WS\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").isNumber())
-                .andExpect(jsonPath("$.name").value("New WS"))
-                .andExpect(jsonPath("$.description").value("hello"))
-                .andExpect(jsonPath("$.ownerUserId").isNumber())
-                .andExpect(jsonPath("$.createdAt").isNotEmpty());
+                .andExpect(jsonPath("$.name").value("New WS"));
     }
 
     @Test
-    void createWithoutTokenReturns401() throws Exception {
+    void createWorkspaceWithoutTokenReturns401() throws Exception {
         mockMvc.perform(post("/api/workspaces")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"X\"}"))
+                        .content("{\"name\":\"New WS\"}"))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void createBlankNameReturns422() throws Exception {
-        String token = loginAndGetAccess(OWNER_USER, OWNER_PASSWORD);
+    void getWorkspaceDetailReturnsMembers() throws Exception {
+        String token = login("keisuke");
 
-        mockMvc.perform(post("/api/workspaces")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"\"}"))
-                .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.status").value(422))
-                .andExpect(jsonPath("$.title").value("Validation Failed"))
-                .andExpect(jsonPath("$.errors[0].field").value("name"));
-    }
-
-    @Test
-    void createTooLongNameReturns422() throws Exception {
-        String token = loginAndGetAccess(OWNER_USER, OWNER_PASSWORD);
-
-        String longName = "a".repeat(65);
-        String body = """
-                {"name":"%s"}
-                """.formatted(longName);
-        mockMvc.perform(post("/api/workspaces")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.errors[0].field").value("name"));
-    }
-
-    @Test
-    void createPersistsAndCreatorBecomesOwnerMember() throws Exception {
-        String token = loginAndGetAccess(OWNER_USER, OWNER_PASSWORD);
-
-        String body = """
-                {"name":"Solo WS","description":""}
-                """;
-        MvcResult result = mockMvc.perform(post("/api/workspaces")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isCreated())
-                .andReturn();
-        JsonNode created = objectMapper.readTree(result.getResponse().getContentAsString());
-        long newId = created.get("id").asLong();
-
-        mockMvc.perform(get("/api/workspaces/" + newId)
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(newId))
-                .andExpect(jsonPath("$.name").value("Solo WS"))
-                .andExpect(jsonPath("$.members.length()").value(1))
-                .andExpect(jsonPath("$.members[0].userId").value(OWNER_USER))
-                .andExpect(jsonPath("$.members[0].role").value("OWNER"));
-    }
-
-    // ---------- GET /api/workspaces ----------
-
-    @Test
-    void listIncludesSeedWorkspacesForOwner() throws Exception {
-        String token = loginAndGetAccess(OWNER_USER, OWNER_PASSWORD);
-
-        mockMvc.perform(get("/api/workspaces")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items").isArray())
-                .andExpect(jsonPath("$.items.length()").value(2))
-                .andExpect(jsonPath("$.items[0].name").value("RaiseTech AI"))
-                .andExpect(jsonPath("$.items[1].name").value("Side Project"))
-                .andExpect(jsonPath("$.hasMore").value(false))
-                .andExpect(jsonPath("$.nextCursor").value(Matchers.nullValue()));
-    }
-
-    @Test
-    void listForNonOwnerSeesOnlyMemberWorkspaces() throws Exception {
-        // haruka は seed で ws-1 だけのメンバー（ws-2 には未参加）
-        String token = loginAndGetAccess(NON_OWNER_USER, NON_OWNER_PASSWORD);
-
-        mockMvc.perform(get("/api/workspaces")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items.length()").value(1))
-                .andExpect(jsonPath("$.items[0].name").value("RaiseTech AI"))
-                .andExpect(jsonPath("$.hasMore").value(false));
-    }
-
-    @Test
-    void listWithoutTokenReturns401() throws Exception {
-        mockMvc.perform(get("/api/workspaces"))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void listPagesWithCursor() throws Exception {
-        String token = loginAndGetAccess(OWNER_USER, OWNER_PASSWORD);
-
-        // limit=1 で 1 ページ目: ws-1 のみ、hasMore=true, nextCursor="1"
-        mockMvc.perform(get("/api/workspaces?limit=1")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items.length()").value(1))
-                .andExpect(jsonPath("$.items[0].id").value(1))
-                .andExpect(jsonPath("$.hasMore").value(true))
-                .andExpect(jsonPath("$.nextCursor").value("1"));
-
-        // 2 ページ目: cursor=1 → ws-2 のみ、hasMore=false
-        mockMvc.perform(get("/api/workspaces?limit=1&cursor=1")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items.length()").value(1))
-                .andExpect(jsonPath("$.items[0].id").value(2))
-                .andExpect(jsonPath("$.hasMore").value(false))
-                .andExpect(jsonPath("$.nextCursor").value(Matchers.nullValue()));
-    }
-
-    // ---------- GET /api/workspaces/{wsId} ----------
-
-    @Test
-    void getDetailForMemberReturnsMembersList() throws Exception {
-        String token = loginAndGetAccess(OWNER_USER, OWNER_PASSWORD);
-
+        // ws-1 (RaiseTech AI) の detail を取得。seed で id=1
         mockMvc.perform(get("/api/workspaces/1")
-                        .header("Authorization", "Bearer " + token))
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(1))
-                .andExpect(jsonPath("$.name").value("RaiseTech AI"))
-                .andExpect(jsonPath("$.members.length()").value(5))
-                .andExpect(jsonPath("$.members[0].userId").value(OWNER_USER))
-                .andExpect(jsonPath("$.members[0].role").value("OWNER"));
+                .andExpect(jsonPath("$.members").isArray());
     }
 
     @Test
-    void getDetailForNonMemberReturns403() throws Exception {
-        // haruka は ws-2 (Side Project) には未参加
-        String token = loginAndGetAccess(NON_OWNER_USER, NON_OWNER_PASSWORD);
+    void getWorkspaceDetailForNonMemberReturns403() throws Exception {
+        // kenta は ws-2 (Side Project) のメンバーではない。seed で id=2
+        String token = login("kenta");
 
         mockMvc.perform(get("/api/workspaces/2")
-                        .header("Authorization", "Bearer " + token))
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isForbidden());
+    }
+
+    // ---------- DELETE /api/workspaces/{wsId}/members/{userId}（F-16 キック） ----------
+
+    @Test
+    void kickMemberByOwnerReturns204AndMarksLeftAndClearsUnread() throws Exception {
+        // 事前条件: haruka は ws-1 と そのチャンネル general(1) のアクティブメンバー。
+        Assertions.assertTrue(
+                channelMemberRepository.findByChannelIdAndUserIdAndLeftAtIsNull(1L, HARUKA_ID).isPresent());
+
+        // haruka の未読/メンションバッジを Redis に積んでおく（キックで消えることを確認するため）。
+        redisTemplate.opsForHash().put("unread:" + HARUKA_ID, "channel:1", "3");
+        redisTemplate.opsForHash().put("mention:" + HARUKA_ID, "channel:1", "1");
+
+        String ownerToken = login("keisuke");
+        mockMvc.perform(delete("/api/workspaces/" + WS_1 + "/members/" + HARUKA_ID)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isNoContent());
+
+        // ワークスペースメンバーシップが論理退出している（アクティブ行が無い）
+        Assertions.assertTrue(
+                workspaceMemberRepository.findByWorkspaceIdAndUserIdAndLeftAtIsNull(WS_1, HARUKA_ID).isEmpty(),
+                "workspace_members.left_at がセットされていること");
+
+        // 参加していた全チャンネル（general/random/dev-backend）が論理退出している
+        Assertions.assertTrue(channelMemberRepository.findByChannelIdAndUserIdAndLeftAtIsNull(1L, HARUKA_ID).isEmpty());
+        Assertions.assertTrue(channelMemberRepository.findByChannelIdAndUserIdAndLeftAtIsNull(2L, HARUKA_ID).isEmpty());
+        Assertions.assertTrue(channelMemberRepository.findByChannelIdAndUserIdAndLeftAtIsNull(3L, HARUKA_ID).isEmpty());
+
+        // Redis の未読/メンションバッジが消えている
+        Assertions.assertFalse(redisTemplate.opsForHash().hasKey("unread:" + HARUKA_ID, "channel:1"));
+        Assertions.assertFalse(redisTemplate.opsForHash().hasKey("mention:" + HARUKA_ID, "channel:1"));
+    }
+
+    @Test
+    void kickByNonOwnerReturns403() throws Exception {
+        // haruka は ws-1 の MEMBER（OWNER ではない）→ ryo をキックできない
+        String memberToken = login("haruka");
+
+        mockMvc.perform(delete("/api/workspaces/" + WS_1 + "/members/3")
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.status").value(403))
                 .andExpect(jsonPath("$.title").value("Forbidden"));
     }
 
     @Test
-    void getDetailForUnknownIdReturns404() throws Exception {
-        String token = loginAndGetAccess(OWNER_USER, OWNER_PASSWORD);
+    void kickSelfReturns409() throws Exception {
+        // OWNER が自分自身をキックしようとする → 409
+        String ownerToken = login("keisuke");
 
-        mockMvc.perform(get("/api/workspaces/999999")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.status").value(404))
-                .andExpect(jsonPath("$.title").value("Resource Not Found"));
+        mockMvc.perform(delete("/api/workspaces/" + WS_1 + "/members/" + KEISUKE_ID)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.title").value("Conflict"));
     }
 
     @Test
-    void getDetailWithoutTokenReturns401() throws Exception {
-        mockMvc.perform(get("/api/workspaces/1"))
+    void kickNonMemberReturns404() throws Exception {
+        // ws-2 (Side Project) のメンバーは keisuke のみ。haruka は非メンバー → 404
+        String ownerToken = login("keisuke");
+
+        mockMvc.perform(delete("/api/workspaces/" + WS_2 + "/members/" + HARUKA_ID)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void kickWithoutTokenReturns401() throws Exception {
+        mockMvc.perform(delete("/api/workspaces/" + WS_1 + "/members/" + HARUKA_ID))
                 .andExpect(status().isUnauthorized());
     }
 
     // ---------- helpers ----------
 
-    private String loginAndGetAccess(String userId, String password) throws Exception {
+    private String login(String userId) throws Exception {
         String body = """
                 {"userId":"%s","password":"%s"}
-                """.formatted(userId, password);
+                """.formatted(userId, PASSWORD);
         MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))

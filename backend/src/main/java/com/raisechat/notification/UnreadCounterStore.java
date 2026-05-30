@@ -57,6 +57,15 @@ public class UnreadCounterStore {
         redis.opsForHash().put(key(userId), field, String.valueOf(count));
     }
 
+    /**
+     * 指定フィールドを両 Hash（総未読・メンション）から削除する。
+     * キック等でユーザーがスコープから外れた際に、幽霊バッジが残らないよう未読/メンションをまとめて消す。
+     */
+    public void clear(Long userId, String field) {
+        redis.opsForHash().delete(key(userId), field);
+        redis.opsForHash().delete(mentionKey(userId), field);
+    }
+
     /** マーカーが存在するか（= Postgres から構築済みか）。 */
     public boolean isSynced(Long userId) {
         return redis.opsForHash().hasKey(key(userId), SYNC_MARKER_FIELD);

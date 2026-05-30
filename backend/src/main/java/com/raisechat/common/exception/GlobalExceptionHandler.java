@@ -11,7 +11,9 @@ import com.raisechat.message.exception.MessageNotFoundException;
 import com.raisechat.user.exception.UserNotFoundException;
 import com.raisechat.workspace.exception.InviteGoneException;
 import com.raisechat.workspace.exception.InviteNotFoundException;
+import com.raisechat.workspace.exception.WorkspaceConflictException;
 import com.raisechat.workspace.exception.WorkspaceForbiddenException;
+import com.raisechat.workspace.exception.WorkspaceMemberNotFoundException;
 import com.raisechat.workspace.exception.WorkspaceNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.Ordered;
@@ -78,6 +80,26 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
         pd.setType(URI.create(PROBLEM_BASE + "forbidden"));
         pd.setTitle("Forbidden");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(WorkspaceMemberNotFoundException.class)
+    public ProblemDetail handleWorkspaceMemberNotFound(WorkspaceMemberNotFoundException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
+        pd.setType(URI.create(PROBLEM_BASE + "not-found"));
+        pd.setTitle("Resource Not Found");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(WorkspaceConflictException.class)
+    public ProblemDetail handleWorkspaceConflict(WorkspaceConflictException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.CONFLICT);
+        pd.setType(URI.create(PROBLEM_BASE + "conflict"));
+        pd.setTitle("Conflict");
         pd.setDetail(ex.getMessage());
         pd.setInstance(URI.create(req.getRequestURI()));
         return pd;
