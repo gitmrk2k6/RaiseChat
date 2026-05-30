@@ -78,4 +78,15 @@ public class WorkspaceController {
     ) {
         workspaceService.revokeInvite(principal.id(), wsId, inviteId);
     }
+
+    // F-16 ユーザーキック: ワークスペースから対象メンバーを除外する（OWNER のみ）。
+    @DeleteMapping("/{wsId}/members/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void kickMember(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable Long wsId,
+            @PathVariable Long userId
+    ) {
+        workspaceService.kickMember(principal.id(), wsId, userId);
+    }
 }

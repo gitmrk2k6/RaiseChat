@@ -32,4 +32,17 @@ public interface ChannelMemberRepository extends JpaRepository<ChannelMember, Lo
     // 再参加対応: 過去に退出した行（left_at IS NOT NULL）を取り直して left_at をクリアするため、
     // 状態に依らず (channel_id, user_id) で 1 件取得する（DB のユニーク制約と整合）
     Optional<ChannelMember> findByChannelIdAndUserId(Long channelId, Long userId);
+
+    // F-16 キック用: 当該ワークスペース内で、対象ユーザーが現在参加している全チャンネルのメンバー行。
+    // left_at セット（論理退出）と Redis クリア（channel.id 利用）の両方に使う。
+    @Query("""
+            SELECT cm FROM ChannelMember cm
+            JOIN FETCH cm.channel c
+            WHERE c.workspace.id = :workspaceId
+              AND cm.user.id = :userId
+              AND cm.leftAt IS NULL
+            """)
+    List<ChannelMember> findActiveByWorkspaceIdAndUserId(
+            @Param("workspaceId") Long workspaceId,
+            @Param("userId") Long userId);
 }
