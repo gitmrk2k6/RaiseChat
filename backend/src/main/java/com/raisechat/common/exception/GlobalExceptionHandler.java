@@ -10,6 +10,7 @@ import com.raisechat.message.exception.AttachmentTooLargeException;
 import com.raisechat.message.exception.AttachmentValidationException;
 import com.raisechat.message.exception.MessageForbiddenException;
 import com.raisechat.message.exception.MessageNotFoundException;
+import com.raisechat.message.exception.SearchValidationException;
 import com.raisechat.message.exception.UnsupportedAttachmentTypeException;
 import com.raisechat.user.exception.AvatarTooLargeException;
 import com.raisechat.user.exception.AvatarValidationException;
@@ -229,6 +230,17 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AttachmentValidationException.class)
     public ProblemDetail handleAttachmentValidation(AttachmentValidationException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
+        pd.setType(URI.create(PROBLEM_BASE + "validation"));
+        pd.setTitle("Validation Failed");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    // F-13 検索クエリ（q）が空・空白のみ → 422。
+    @ExceptionHandler(SearchValidationException.class)
+    public ProblemDetail handleSearchValidation(SearchValidationException ex, HttpServletRequest req) {
         ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
         pd.setType(URI.create(PROBLEM_BASE + "validation"));
         pd.setTitle("Validation Failed");
