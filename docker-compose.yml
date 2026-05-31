@@ -31,9 +31,15 @@ services:
 
   # AWS S3 のローカルエミュレータ。アバター画像（F-02）・ファイル添付（F-10）の保存先。
   # 本番は実際の AWS S3 を使う想定で、エンドポイントを環境変数で差し替える。
+  #
+  # storage profile を付けているため、デフォルトの `docker compose up -d` では起動しない。
+  # アバター/ファイル機能を触るときだけ次のように明示起動する:
+  #   docker compose --profile storage up -d localstack
   localstack:
     image: localstack/localstack:3
     container_name: raisechat-localstack
+    profiles:
+      - storage
     ports:
       - "4566:4566"
     environment:

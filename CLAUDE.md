@@ -156,6 +156,16 @@ cd backend && ./gradlew bootRun
 cd frontend && npm run dev
 ```
 
+### LocalStack（S3 エミュレータ）のオンデマンド起動
+
+LocalStack は `storage` profile を付けているため、通常の `docker compose up -d` では起動しない。
+アバター画像（F-02）・ファイル添付（F-10）など S3 を使う機能を触るときだけ明示的に起動する。
+
+```bash
+docker compose --profile storage up -d localstack   # 起動（初回にバケットを自動作成）
+docker compose stop localstack                       # 停止
+```
+
 ---
 
 ## 技術スタック方針（暫定）
