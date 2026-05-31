@@ -29,6 +29,27 @@ services:
       timeout: 3s
       retries: 10
 
+  # AWS S3 のローカルエミュレータ。アバター画像（F-02）・ファイル添付（F-10）の保存先。
+  # 本番は実際の AWS S3 を使う想定で、エンドポイントを環境変数で差し替える。
+  localstack:
+    image: localstack/localstack:3
+    container_name: raisechat-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: s3
+      DEBUG: 0
+    volumes:
+      # 起動完了後に ready.d 配下のスクリプトが実行され、バケットを自動作成する。
+      - ./infra/localstack/init:/etc/localstack/init/ready.d
+      - localstack_data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal s3 ls s3://raisechat-avatars || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
 volumes:
   postgres_data:
   redis_data:
+  localstack_data:
