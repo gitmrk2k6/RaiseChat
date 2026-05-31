@@ -3,12 +3,19 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Plus } from "lucide-react";
-import { workspaces } from "@/lib/mock/workspaces";
+import { useQuery } from "@tanstack/react-query";
+import { listWorkspaces } from "@/lib/api/workspaces";
+import { queryKeys } from "@/lib/api/queryKeys";
 import { cn } from "@/lib/utils";
 
 export function WorkspaceRail() {
   const params = useParams<{ workspaceId?: string }>();
-  const activeId = params.workspaceId ?? "ws-1";
+  const activeId = params.workspaceId;
+
+  const { data: workspaces = [] } = useQuery({
+    queryKey: queryKeys.workspaces,
+    queryFn: listWorkspaces,
+  });
 
   return (
     <nav className="w-16 bg-slack-rail flex flex-col items-center py-3 gap-3 shrink-0">
@@ -31,7 +38,7 @@ export function WorkspaceRail() {
       })}
       <button
         className="w-10 h-10 rounded-lg flex items-center justify-center text-white/70 hover:text-white bg-white/10 hover:bg-white/20"
-        title="ワークスペース追加（モック）"
+        title="ワークスペース追加（未実装）"
       >
         <Plus size={20} />
       </button>

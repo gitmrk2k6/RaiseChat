@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { ApiError } from "@/lib/api/problem";
 
-// ログイン後の遷移先。ワークスペース一覧 API 接続（後続 PR）までは暫定的に mock のルートへ。
-const AFTER_LOGIN_PATH = "/workspaces/ws-1/channels/ch-general";
+// ログイン後の遷移先。/workspaces で一覧を取得し、先頭ワークスペースの先頭チャンネルへ解決する。
+const AFTER_LOGIN_PATH = "/workspaces";
 
 export default function LoginPage() {
   const router = useRouter();
