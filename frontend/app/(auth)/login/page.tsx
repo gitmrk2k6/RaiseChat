@@ -3,15 +3,39 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth/AuthContext";
+import { ApiError } from "@/lib/api/problem";
+
+// ログイン後の遷移先。ワークスペース一覧 API 接続（後続 PR）までは暫定的に mock のルートへ。
+const AFTER_LOGIN_PATH = "/workspaces/ws-1/channels/ch-general";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("kkd28mr@gmail.com");
-  const [password, setPassword] = useState("password");
+  const { login } = useAuth();
+  const [userId, setUserId] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    router.push("/workspaces/ws-1/channels/ch-general");
+    setError(null);
+    setSubmitting(true);
+    try {
+      await login({ userId, password });
+      router.push(AFTER_LOGIN_PATH);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(
+          err.status === 401
+            ? "ユーザーID またはパスワードが正しくありません"
+            : err.message,
+        );
+      } else {
+        setError("ログインに失敗しました。時間をおいて再度お試しください");
+      }
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -22,14 +46,19 @@ export default function LoginPage() {
       <p className="text-center text-sm text-gray-600 mb-6">
         RaiseTech AI ワークスペースに接続します
       </p>
+      {error && (
+        <div className="mb-4 px-3 py-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded">
+          {error}
+        </div>
+      )}
       <form onSubmit={submit} className="space-y-4">
         <div>
-          <label className="block text-sm font-bold mb-1">メールアドレス</label>
+          <label className="block text-sm font-bold mb-1">ユーザーID</label>
           <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
+            value={userId}
+            onChange={(e) => setUserId(e.target.value)}
+            placeholder="taro"
+            autoComplete="username"
             className="w-full px-3 py-2 border border-gray-300 rounded outline-none focus:border-gray-500 text-sm"
             required
           />
@@ -40,20 +69,19 @@ export default function LoginPage() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
             className="w-full px-3 py-2 border border-gray-300 rounded outline-none focus:border-gray-500 text-sm"
             required
           />
         </div>
         <button
           type="submit"
-          className="w-full bg-slack-aubergine text-white font-bold py-2.5 rounded hover:bg-slack-aubergineHover transition"
+          disabled={submitting}
+          className="w-full bg-slack-aubergine text-white font-bold py-2.5 rounded hover:bg-slack-aubergineHover transition disabled:opacity-60"
         >
-          ログイン
+          {submitting ? "ログイン中…" : "ログイン"}
         </button>
       </form>
-      <p className="text-xs text-gray-500 text-center mt-4">
-        ※ プロトタイプのため、任意の値で先に進めます
-      </p>
       <div className="mt-6 pt-6 border-t text-center text-sm text-gray-600">
         アカウントをお持ちでない方は{" "}
         <Link href="/signup" className="text-slack-mention font-bold hover:underline">

@@ -1,14 +1,14 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { currentUserId, getUser } from "@/lib/mock/users";
+import { useAuth } from "@/lib/auth/AuthContext";
 
 export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const me = getUser(currentUserId);
-  const router = useRouter();
+  const { logout } = useAuth();
 
   return (
     <Modal
@@ -22,10 +22,10 @@ export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => 
             variant="danger"
             onClick={() => {
               onClose();
-              router.push("/login");
+              logout();
             }}
           >
-            ログアウト（モック）
+            ログアウト
           </Button>
         </>
       }
