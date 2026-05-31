@@ -26,6 +26,12 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+  servlet:
+    multipart:
+      # アバターの上限は 2MB（サービス層で厳密判定し 413 を返す）。
+      # ここはフレームワーク側の保険として余裕を持たせ、極端に巨大なアップロードのみ弾く。
+      max-file-size: 10MB
+      max-request-size: 10MB
 
 server:
   port: 8080
@@ -47,6 +53,17 @@ app:
   invite:
     # 招待リンクのベース URL。発行レスポンスの inviteUrl を「base-url/{token}」で組み立てる。
     base-url: ${INVITE_BASE_URL:http://localhost:3000/invite}
+  storage:
+    # アバター画像などのオブジェクトストレージ設定。dev は LocalStack（S3 エミュレータ）。
+    # 本番は実 AWS S3 を指すよう環境変数で上書きする。
+    s3:
+      bucket: ${S3_BUCKET:raisechat-avatars}
+      region: ${AWS_REGION:us-east-1}
+      endpoint: ${S3_ENDPOINT:http://localhost:4566}
+      access-key: ${AWS_ACCESS_KEY_ID:test}
+      secret-key: ${AWS_SECRET_ACCESS_KEY:test}
+      # avatarUrl 組み立て用の公開ベース URL（未指定なら endpoint/bucket から導出）。
+      public-base-url: ${S3_PUBLIC_BASE_URL:}
 
 logging:
   level:

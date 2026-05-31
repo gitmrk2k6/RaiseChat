@@ -8,6 +8,9 @@ import com.raisechat.dm.exception.DmNotFoundException;
 import com.raisechat.dm.exception.DmValidationException;
 import com.raisechat.message.exception.MessageForbiddenException;
 import com.raisechat.message.exception.MessageNotFoundException;
+import com.raisechat.user.exception.AvatarTooLargeException;
+import com.raisechat.user.exception.AvatarValidationException;
+import com.raisechat.user.exception.UnsupportedAvatarTypeException;
 import com.raisechat.user.exception.UserNotFoundException;
 import com.raisechat.workspace.exception.InviteGoneException;
 import com.raisechat.workspace.exception.InviteNotFoundException;
@@ -23,6 +26,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.net.URI;
 import java.util.List;
@@ -60,6 +64,49 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
         pd.setType(URI.create(PROBLEM_BASE + "not-found"));
         pd.setTitle("Resource Not Found");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    // アバター画像が対応外の MIME タイプ → 415。
+    @ExceptionHandler(UnsupportedAvatarTypeException.class)
+    public ProblemDetail handleUnsupportedAvatarType(UnsupportedAvatarTypeException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+        pd.setType(URI.create(PROBLEM_BASE + "unsupported-media-type"));
+        pd.setTitle("Unsupported Media Type");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    // アバター画像がサイズ上限超過 → 413。
+    @ExceptionHandler(AvatarTooLargeException.class)
+    public ProblemDetail handleAvatarTooLarge(AvatarTooLargeException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.PAYLOAD_TOO_LARGE);
+        pd.setType(URI.create(PROBLEM_BASE + "payload-too-large"));
+        pd.setTitle("Payload Too Large");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    // multipart 解析段階でサイズ上限を超えた場合の保険（アバター上限超過も 413 に揃える）。
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ProblemDetail handleMaxUploadSize(MaxUploadSizeExceededException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.PAYLOAD_TOO_LARGE);
+        pd.setType(URI.create(PROBLEM_BASE + "payload-too-large"));
+        pd.setTitle("Payload Too Large");
+        pd.setDetail("アップロードサイズが上限を超えています");
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(AvatarValidationException.class)
+    public ProblemDetail handleAvatarValidation(AvatarValidationException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
+        pd.setType(URI.create(PROBLEM_BASE + "validation"));
+        pd.setTitle("Validation Failed");
         pd.setDetail(ex.getMessage());
         pd.setInstance(URI.create(req.getRequestURI()));
         return pd;

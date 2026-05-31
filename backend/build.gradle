@@ -17,8 +17,16 @@ repositories {
 	mavenCentral()
 }
 
+dependencyManagement {
+	imports {
+		mavenBom 'software.amazon.awssdk:bom:2.45.1'
+	}
+}
+
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	// AWS SDK for Java v2（S3）。ローカルは LocalStack、本番は AWS S3 を想定。
+	implementation 'software.amazon.awssdk:s3'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
