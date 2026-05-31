@@ -28,8 +28,14 @@ export function MessageItem({
   onOpenThread,
   compact,
 }: Props) {
-  const author = getUser(message.authorId);
-  const isMine = author.id === currentUserId;
+  // 実 API メッセージは message.author（displayName / 派生 avatarColor）を優先。
+  // mock メッセージは author 未設定なので getUser(authorId) にフォールバックする。
+  const fallback = getUser(message.authorId);
+  const author = {
+    displayName: message.author?.displayName ?? fallback.displayName,
+    avatarColor: message.author?.avatarColor ?? fallback.avatarColor,
+  };
+  const isMine = message.authorId === currentUserId;
 
   const [hover, setHover] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);

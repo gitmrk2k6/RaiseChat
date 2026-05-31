@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { notFound } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { getChannel as getMockChannel } from "@/lib/mock/channels";
-import { getChannelMessages, getThreadReplies } from "@/lib/mock/messages";
+import { getThreadReplies } from "@/lib/mock/messages";
 import { currentUserId } from "@/lib/mock/users";
 import { getChannel as fetchChannel } from "@/lib/api/channels";
+import { listChannelMessages } from "@/lib/api/messages";
 import { queryKeys } from "@/lib/api/queryKeys";
 import { ChannelHeader } from "@/components/chat/ChannelHeader";
 import { MessageList } from "@/components/chat/MessageList";
@@ -16,7 +17,6 @@ import type { Message } from "@/types";
 
 export default function ChannelPage({ params }: { params: { channelId: string } }) {
   // チャンネルのメタは mock を優先。mock に無い（＝実 API のチャンネル）場合はヘッダ用に実 API から取得する。
-  // メッセージ本体の実 API 化は別単位のため、ここではヘッダのみ実データに橋渡しする。
   const mockChannel = getMockChannel(params.channelId);
   const { data: apiChannel, isLoading: channelLoading } = useQuery({
     queryKey: queryKeys.channel(params.channelId),
@@ -25,10 +25,49 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
   });
   const channel = mockChannel ?? apiChannel;
 
-  const initial = useMemo(() => getChannelMessages(params.channelId), [params.channelId]);
-  const [messages, setMessages] = useState<Message[]>(initial);
+  // メッセージ履歴（実 API、cursor 無限スクロール）。API は createdAt 降順で返すので表示は昇順へ並べ替える。
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: messagesLoading,
+  } = useInfiniteQuery({
+    queryKey: queryKeys.channelMessages(params.channelId),
+    queryFn: ({ pageParam }) => listChannelMessages(params.channelId, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.nextCursor : undefined),
+    refetchOnWindowFocus: false,
+    staleTime: Infinity,
+  });
+
+  // pages: [新しいページ(降順), さらに古いページ(降順), ...] → 全体を昇順（古→新）に整える。
+  const historyAsc = useMemo(() => {
+    if (!data) return [];
+    return [...data.pages.flatMap((p) => p.items)].reverse();
+  }, [data]);
+
+  // 書き込み系（送信/編集/削除/リアクション/スレッド）は今単位では mock 据え置き。
+  // 実 API 履歴は messages へ id マージで合流させ、ローカル変更を壊さない:
+  //  - 未保有 id のみ追加（既存オブジェクトは上書きしない＝編集/リアクションを保持）
+  //  - ローカル送信（m-local-*）は server に無いため常に保持
+  //  - ローカル削除済み id は再追加しない
+  const [messages, setMessages] = useState<Message[]>([]);
+  const deletedIdsRef = useRef<Set<string>>(new Set());
   const [threadParentId, setThreadParentId] = useState<string | null>(null);
   const [threadReplies, setThreadReplies] = useState<Record<string, Message[]>>({});
+
+  useEffect(() => {
+    if (historyAsc.length === 0) return;
+    setMessages((prev) => {
+      const existing = new Set(prev.map((m) => m.id));
+      const additions = historyAsc.filter(
+        (m) => !existing.has(m.id) && !deletedIdsRef.current.has(m.id),
+      );
+      if (additions.length === 0) return prev;
+      return [...additions, ...prev].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    });
+  }, [historyAsc]);
 
   const send = (body: string) => {
     const m: Message = {
@@ -67,6 +106,7 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
   };
 
   const remove = (id: string) => {
+    deletedIdsRef.current.add(id);
     setMessages((prev) => prev.filter((m) => m.id !== id));
     if (threadParentId === id) setThreadParentId(null);
   };
@@ -146,13 +186,22 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
     <>
       <div className="flex-1 flex flex-col min-w-0">
         <ChannelHeader channel={channel} />
-        <MessageList
-          messages={messages}
-          onReact={toggleReact}
-          onEdit={edit}
-          onDelete={remove}
-          onOpenThread={openThread}
-        />
+        {messagesLoading ? (
+          <div className="flex-1 flex items-center justify-center text-sm text-gray-500">
+            読み込み中…
+          </div>
+        ) : (
+          <MessageList
+            messages={messages}
+            onReact={toggleReact}
+            onEdit={edit}
+            onDelete={remove}
+            onOpenThread={openThread}
+            onLoadOlder={() => fetchNextPage()}
+            hasMore={hasNextPage}
+            loadingOlder={isFetchingNextPage}
+          />
+        )}
         <MessageInput placeholder={`#${channel.name} へのメッセージ`} onSend={send} />
       </div>
       {parent && (

@@ -59,3 +59,39 @@ export interface ChannelDto {
   createdByUserId: number;
   createdAt: string;
 }
+
+/** メッセージ添付（AttachmentResponse）。S3 キーは晒さず復元済み URL のみ返る。 */
+export interface AttachmentDto {
+  id: number;
+  messageId: number;
+  uploaderId: number;
+  url: string;
+  mimeType: string;
+  sizeBytes: number;
+  originalFilename: string;
+  width: number | null;
+  height: number | null;
+  durationSec: number | null;
+  createdAt: string;
+}
+
+/**
+ * GET /api/channels/{id}/messages・/api/dm/rooms/{id}/messages の要素（MessageResponse）。
+ * 投稿者は authorId / authorUserId / authorDisplayName にフラット展開され、avatarUrl・avatarColor は返らない。
+ * reactions / threadReplyCount はこのレスポンスに含まれない（WS / 別 API 経由）。
+ */
+export interface MessageDto {
+  id: number;
+  channelId: number | null;
+  dmRoomId: number | null;
+  authorId: number;
+  authorUserId: string;
+  authorDisplayName: string;
+  body: string;
+  parentMessageId: number | null;
+  mentionedUserIds: number[];
+  attachments: AttachmentDto[];
+  editedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -48,6 +48,10 @@ export interface Message {
   dmRoomId?: ID;
   parentId?: ID;
   authorId: ID;
+  // 実 API の Message は投稿者表示名のみ埋め込みで返す（avatarColor は返さない）。
+  // ここに displayName と派生 avatarColor を載せておき、描画側は getUser() より優先して使う。
+  // mock メッセージでは未設定（getUser(authorId) にフォールバック）。
+  author?: { displayName: string; avatarColor: string };
   body: string;
   createdAt: string;
   editedAt?: string;
