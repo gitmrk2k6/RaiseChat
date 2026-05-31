@@ -7,6 +7,12 @@ import { listDmRooms } from "@/lib/api/dm";
 import { listDmMessages } from "@/lib/api/messages";
 import { queryKeys } from "@/lib/api/queryKeys";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useStompSubscription } from "@/lib/ws/useStompSubscription";
+import {
+  messageCreatedToMessage,
+  parseWsEvent,
+  publishDmMessage,
+} from "@/lib/ws/messages";
 import { MessageList } from "@/components/chat/MessageList";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { Avatar } from "@/components/ui/Avatar";
@@ -51,38 +57,40 @@ export default function DmPage({
     return [...data.pages.flatMap((p) => p.items)].reverse();
   }, [data]);
 
-  // 書き込み系（送信/編集/削除/リアクション）は今単位では mock 据え置き（統合3 と同方針）。
-  // 実 API 履歴は messages へ id マージで合流させ、ローカル変更を壊さない。
+  // トップレベルメッセージの送信は実 WS（/app/dm/{roomId}/messages）へ。受信は /topic/dm/{roomId}
+  // の MESSAGE_CREATED を id マージで合流（履歴ハイドレーションと同経路、自分の送信も echo で届く）。
+  // 編集/削除/リアクションは今単位では mock 据え置き（後続単位で実 API 接続）。
   const [messages, setMessages] = useState<Message[]>([]);
   const deletedIdsRef = useRef<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (historyAsc.length === 0) return;
+  // 履歴・WS 受信の双方を同じ id マージで取り込む共通インサータ。
+  const mergeMessages = (incoming: Message[]) => {
     setMessages((prev) => {
       const existing = new Set(prev.map((m) => m.id));
-      const additions = historyAsc.filter(
+      const additions = incoming.filter(
         (m) => !existing.has(m.id) && !deletedIdsRef.current.has(m.id),
       );
       if (additions.length === 0) return prev;
       return [...additions, ...prev].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     });
+  };
+
+  useEffect(() => {
+    if (historyAsc.length === 0) return;
+    mergeMessages(historyAsc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyAsc]);
 
+  // リアルタイム受信。MESSAGE_CREATED 以外は今単位では無視する。
+  useStompSubscription(`/topic/dm/${params.dmId}`, (frame) => {
+    const event = parseWsEvent(frame.body);
+    if (!event) return;
+    const created = messageCreatedToMessage(event);
+    if (created) mergeMessages([created]);
+  });
+
   const send = (body: string) => {
-    if (!meId) return;
-    const m: Message = {
-      id: `m-local-${Date.now()}`,
-      dmRoomId: params.dmId,
-      authorId: meId,
-      body,
-      createdAt: new Date().toISOString(),
-      reactions: [],
-      attachments: [],
-      mentionIds: [],
-      threadReplyCount: 0,
-      threadParticipantIds: [],
-    };
-    setMessages((prev) => [...prev, m]);
+    publishDmMessage(params.dmId, body);
   };
 
   const toggleReact = (id: string, emoji: string) => {

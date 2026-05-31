@@ -9,6 +9,12 @@ import { currentUserId } from "@/lib/mock/users";
 import { getChannel as fetchChannel } from "@/lib/api/channels";
 import { listChannelMessages } from "@/lib/api/messages";
 import { queryKeys } from "@/lib/api/queryKeys";
+import { useStompSubscription } from "@/lib/ws/useStompSubscription";
+import {
+  messageCreatedToMessage,
+  parseWsEvent,
+  publishChannelMessage,
+} from "@/lib/ws/messages";
 import { ChannelHeader } from "@/components/chat/ChannelHeader";
 import { MessageList } from "@/components/chat/MessageList";
 import { MessageInput } from "@/components/chat/MessageInput";
@@ -47,42 +53,45 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
     return [...data.pages.flatMap((p) => p.items)].reverse();
   }, [data]);
 
-  // 書き込み系（送信/編集/削除/リアクション/スレッド）は今単位では mock 据え置き。
-  // 実 API 履歴は messages へ id マージで合流させ、ローカル変更を壊さない:
-  //  - 未保有 id のみ追加（既存オブジェクトは上書きしない＝編集/リアクションを保持）
-  //  - ローカル送信（m-local-*）は server に無いため常に保持
+  // トップレベルメッセージの送信は実 WS（/app/channels/{id}/messages）へ。受信は /topic/channels/{id}
+  // の MESSAGE_CREATED を id マージで messages へ合流させる（履歴ハイドレーションと同経路）:
+  //  - 未保有 id のみ追加（既存オブジェクトは上書きしない＝ローカルの編集/リアクションを保持）
   //  - ローカル削除済み id は再追加しない
+  //  - 自分の送信もサーバ echo として同じ経路で届くため、楽観 insert は行わない
+  // 編集/削除/リアクション/スレッドは今単位では mock 据え置き（後続単位で実 API 接続）。
   const [messages, setMessages] = useState<Message[]>([]);
   const deletedIdsRef = useRef<Set<string>>(new Set());
   const [threadParentId, setThreadParentId] = useState<string | null>(null);
   const [threadReplies, setThreadReplies] = useState<Record<string, Message[]>>({});
 
-  useEffect(() => {
-    if (historyAsc.length === 0) return;
+  // 履歴・WS 受信の双方を同じ id マージで取り込む共通インサータ。
+  const mergeMessages = (incoming: Message[]) => {
     setMessages((prev) => {
       const existing = new Set(prev.map((m) => m.id));
-      const additions = historyAsc.filter(
+      const additions = incoming.filter(
         (m) => !existing.has(m.id) && !deletedIdsRef.current.has(m.id),
       );
       if (additions.length === 0) return prev;
       return [...additions, ...prev].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     });
+  };
+
+  useEffect(() => {
+    if (historyAsc.length === 0) return;
+    mergeMessages(historyAsc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyAsc]);
 
+  // リアルタイム受信。MESSAGE_CREATED 以外（編集/削除/リアクション）は今単位では無視する。
+  useStompSubscription(`/topic/channels/${params.channelId}`, (frame) => {
+    const event = parseWsEvent(frame.body);
+    if (!event) return;
+    const created = messageCreatedToMessage(event);
+    if (created) mergeMessages([created]);
+  });
+
   const send = (body: string) => {
-    const m: Message = {
-      id: `m-local-${Date.now()}`,
-      channelId: params.channelId,
-      authorId: currentUserId,
-      body,
-      createdAt: new Date().toISOString(),
-      reactions: [],
-      attachments: [],
-      mentionIds: extractMentions(body),
-      threadReplyCount: 0,
-      threadParticipantIds: [],
-    };
-    setMessages((prev) => [...prev, m]);
+    publishChannelMessage(params.channelId, body);
   };
 
   const toggleReact = (id: string, emoji: string) => {
