@@ -1,5 +1,8 @@
 package com.raisechat.common.exception;
 
+import com.raisechat.auth.exception.InvalidCredentialsException;
+import com.raisechat.auth.exception.InvalidRefreshTokenException;
+import com.raisechat.auth.exception.UserAlreadyExistsException;
 import com.raisechat.channel.exception.ChannelConflictException;
 import com.raisechat.channel.exception.ChannelForbiddenException;
 import com.raisechat.channel.exception.ChannelNotFoundException;
@@ -36,10 +39,9 @@ import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
-// auth パッケージの AuthExceptionHandler は Map 形式の旧仕様（後続 Issue で全体移行）。
-// 本ハンドラは新規実装（user / workspace）のみに ProblemDetail を適用するため basePackages でホワイトリスト化。
-// auth は basePackages に含めず、AuthExceptionHandler が引き続き処理する。
-@RestControllerAdvice(basePackages = {"com.raisechat.user", "com.raisechat.workspace", "com.raisechat.channel", "com.raisechat.message", "com.raisechat.dm", "com.raisechat.notification"})
+// 全モジュールのエラーレスポンスを RFC 7807 ProblemDetail に統一する集約ハンドラ。
+// auth も含め basePackages で対象パッケージをホワイトリスト化している。
+@RestControllerAdvice(basePackages = {"com.raisechat.auth", "com.raisechat.user", "com.raisechat.workspace", "com.raisechat.channel", "com.raisechat.message", "com.raisechat.dm", "com.raisechat.notification"})
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class GlobalExceptionHandler {
 
@@ -60,6 +62,28 @@ public class GlobalExceptionHandler {
         pd.setDetail("リクエストボディに不正な値があります");
         pd.setInstance(URI.create(req.getRequestURI()));
         pd.setProperty("errors", errors);
+        return pd;
+    }
+
+    // auth: 認証情報・リフレッシュトークンが不正 → 401。
+    @ExceptionHandler({InvalidCredentialsException.class, InvalidRefreshTokenException.class})
+    public ProblemDetail handleUnauthorized(RuntimeException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
+        pd.setType(URI.create(PROBLEM_BASE + "unauthorized"));
+        pd.setTitle("Unauthorized");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    // auth: 既に存在するユーザー ID / メールでのサインアップ → 409。
+    @ExceptionHandler(UserAlreadyExistsException.class)
+    public ProblemDetail handleUserAlreadyExists(UserAlreadyExistsException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.CONFLICT);
+        pd.setType(URI.create(PROBLEM_BASE + "conflict"));
+        pd.setTitle("Conflict");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
         return pd;
     }
 
