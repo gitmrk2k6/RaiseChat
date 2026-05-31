@@ -58,15 +58,15 @@ class AuthControllerIT {
     }
 
     @Test
-    void signupInvalidUserIdReturns400() throws Exception {
-        // userId に記号を含む（CHECK 制約違反）
+    void signupInvalidUserIdReturns422() throws Exception {
+        // userId に記号を含む（バリデーション違反）→ 他 API と揃えて 422
         String body = """
                 {"userId":"bad!user","displayName":"X","password":"password123"}
                 """;
         mockMvc.perform(post("/api/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableEntity());
     }
 
     // ---------- login ----------
