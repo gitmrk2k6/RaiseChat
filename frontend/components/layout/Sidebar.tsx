@@ -5,9 +5,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ChevronDown, ChevronRight, Hash, Lock, Plus, Edit3 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { getDmsByWorkspace } from "@/lib/mock/dms";
-import { currentUserId, getUser } from "@/lib/mock/users";
 import { listChannels } from "@/lib/api/channels";
+import { listDmRooms } from "@/lib/api/dm";
 import { getWorkspace } from "@/lib/api/workspaces";
 import { queryKeys } from "@/lib/api/queryKeys";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -31,8 +30,12 @@ export function Sidebar() {
     enabled: !!workspaceId,
   });
 
-  // DM 一覧は別単位（F-06）で実 API 化予定。当面は mock 据え置き。
-  const dms = getDmsByWorkspace(workspaceId);
+  const { data: dms = [] } = useQuery({
+    queryKey: queryKeys.dmRooms(workspaceId),
+    queryFn: () => listDmRooms(workspaceId),
+    enabled: !!workspaceId,
+  });
+  const meId = user ? String(user.id) : null;
 
   const [channelsOpen, setChannelsOpen] = useState(true);
   const [dmsOpen, setDmsOpen] = useState(true);
@@ -106,8 +109,8 @@ export function Sidebar() {
             onToggle={() => setDmsOpen((v) => !v)}
           >
             {dms.map((d) => {
-              const partnerId = d.memberIds.find((id) => id !== currentUserId) ?? d.memberIds[0];
-              const partner = getUser(partnerId);
+              const partner =
+                d.members?.find((m) => m.id !== meId) ?? d.members?.[0];
               const active = d.id === params.dmId;
               return (
                 <Link
@@ -122,8 +125,12 @@ export function Sidebar() {
                   )}
                 >
                   <span className="flex items-center gap-2 truncate">
-                    <Avatar name={partner.displayName} color={partner.avatarColor} size="xs" />
-                    <span className="truncate">{partner.displayName}</span>
+                    <Avatar
+                      name={partner?.displayName ?? "?"}
+                      color={partner?.avatarColor ?? "#6B7280"}
+                      size="xs"
+                    />
+                    <span className="truncate">{partner?.displayName ?? "(不明)"}</span>
                   </span>
                   {d.unreadCount > 0 && !active && (
                     <span className="bg-slack-unread text-white text-[10px] font-bold rounded-full px-1.5 min-w-[18px] h-[18px] flex items-center justify-center">

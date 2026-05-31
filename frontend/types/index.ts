@@ -66,6 +66,11 @@ export interface DmRoom {
   id: ID;
   workspaceId: ID;
   memberIds: ID[];
+  /**
+   * 表示用のメンバー情報（実 API では DmRoom.members を変換して充足）。
+   * 相手＝自分以外の判定や名前・アバター色表示に使う。mock 由来のルームでは未設定。
+   */
+  members?: { id: ID; displayName: string; avatarColor: string }[];
   lastMessagePreview?: string;
   unreadCount: number;
 }

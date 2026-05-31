@@ -95,3 +95,26 @@ export async function listChannelMessages(
     hasMore: page.hasMore,
   };
 }
+
+/**
+ * GET /api/dm/rooms/{id}/messages DM のメッセージ履歴。
+ * チャンネル履歴（listChannelMessages）と同仕様（createdAt 降順・cursor ページング）。
+ */
+export async function listDmMessages(
+  dmRoomId: string,
+  cursor?: string | null,
+  limit?: number,
+): Promise<Page<Message>> {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  if (limit != null) params.set("limit", String(limit));
+  const qs = params.toString();
+  const page = await api.get<Page<MessageDto>>(
+    `/api/dm/rooms/${Number(dmRoomId)}/messages${qs ? `?${qs}` : ""}`,
+  );
+  return {
+    items: page.items.map(toMessage),
+    nextCursor: page.nextCursor,
+    hasMore: page.hasMore,
+  };
+}

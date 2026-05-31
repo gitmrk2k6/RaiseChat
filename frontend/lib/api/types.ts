@@ -32,6 +32,26 @@ export interface MeResponse {
   statusMessage: string | null;
 }
 
+/** API が埋め込む User サブセット（DmRoom.members など）。avatarColor は返らない。 */
+export interface UserDto {
+  id: number;
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  statusMessage: string | null;
+}
+
+/**
+ * GET /api/workspaces/{wsId}/dm/rooms の要素（DmRoom）。
+ * members は 1 対 1 DM なので常に 2 件。lastMessagePreview / unreadCount は返らない。
+ */
+export interface DmRoomDto {
+  id: number;
+  workspaceId: number;
+  members: UserDto[];
+  createdAt: string;
+}
+
 /** 一覧系の共通ページングレスポンス（docs/api-design.md §1.2）。 */
 export interface Page<T> {
   items: T[];
