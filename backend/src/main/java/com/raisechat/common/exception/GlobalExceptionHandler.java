@@ -6,8 +6,11 @@ import com.raisechat.channel.exception.ChannelNotFoundException;
 import com.raisechat.dm.exception.DmForbiddenException;
 import com.raisechat.dm.exception.DmNotFoundException;
 import com.raisechat.dm.exception.DmValidationException;
+import com.raisechat.message.exception.AttachmentTooLargeException;
+import com.raisechat.message.exception.AttachmentValidationException;
 import com.raisechat.message.exception.MessageForbiddenException;
 import com.raisechat.message.exception.MessageNotFoundException;
+import com.raisechat.message.exception.UnsupportedAttachmentTypeException;
 import com.raisechat.user.exception.AvatarTooLargeException;
 import com.raisechat.user.exception.AvatarValidationException;
 import com.raisechat.user.exception.UnsupportedAvatarTypeException;
@@ -197,6 +200,38 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
         pd.setType(URI.create(PROBLEM_BASE + "forbidden"));
         pd.setTitle("Forbidden");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    // 添付ファイルが対応外の MIME タイプ → 415（アバターと同様）。
+    @ExceptionHandler(UnsupportedAttachmentTypeException.class)
+    public ProblemDetail handleUnsupportedAttachmentType(UnsupportedAttachmentTypeException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+        pd.setType(URI.create(PROBLEM_BASE + "unsupported-media-type"));
+        pd.setTitle("Unsupported Media Type");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    // 添付ファイルがサイズ上限（10MB）超過 → 413。
+    @ExceptionHandler(AttachmentTooLargeException.class)
+    public ProblemDetail handleAttachmentTooLarge(AttachmentTooLargeException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.PAYLOAD_TOO_LARGE);
+        pd.setType(URI.create(PROBLEM_BASE + "payload-too-large"));
+        pd.setTitle("Payload Too Large");
+        pd.setDetail(ex.getMessage());
+        pd.setInstance(URI.create(req.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(AttachmentValidationException.class)
+    public ProblemDetail handleAttachmentValidation(AttachmentValidationException ex, HttpServletRequest req) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
+        pd.setType(URI.create(PROBLEM_BASE + "validation"));
+        pd.setTitle("Validation Failed");
         pd.setDetail(ex.getMessage());
         pd.setInstance(URI.create(req.getRequestURI()));
         return pd;

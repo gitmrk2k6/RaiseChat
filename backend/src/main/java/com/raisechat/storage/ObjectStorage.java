@@ -15,4 +15,13 @@ public interface ObjectStorage {
      * @return 保存先の公開 URL
      */
     String upload(String key, byte[] data, String contentType);
+
+    /**
+     * 保存済みオブジェクトのキーから公開 URL を復元する。
+     * DB にキーのみ保持する添付（F-10）を一覧返却する際に使う。
+     *
+     * @param key オブジェクトキー
+     * @return 公開 URL
+     */
+    String resolveUrl(String key);
 }

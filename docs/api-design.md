@@ -931,7 +931,7 @@ REST と WebSocket の責務分担を明示する。WebSocket メッセージプ
 | 機能 | 想定エンドポイント | 備考 |
 | --- | --- | --- |
 | F-09 マークダウン | サーバー側エンドポイントなし | クライアント側レンダリングのみ。XSS 対策は表示時のサニタイズ |
-| F-10 ファイル添付 | `POST /api/messages/{id}/attachments` または S3 pre-signed URL | ファイル方式の決定が前提 |
+| F-10 ファイル添付 | ✅ `POST /api/messages/{id}/attachments`（multipart）で実装済 | 直接 multipart 方式に確定（F-02 アバターと同じ `ObjectStorage` 抽象を再利用）。投稿者のみ添付可・mime 5値 / 10MB 上限・添付は `MessageResponse.attachments` で返却。pre-signed URL 方式は将来 `ObjectStorage` 裏で差替可 |
 | F-11 絵文字リアクション | ✅ [§5.10](#510-絵文字リアクションf-11) で定義済（付与・解除 + WS 配信） | |
 | F-12 メンション | メッセージ送信時に本文パースで自動抽出。明示エンドポイントは不要 | 通知は F-14 と連動 |
 | F-13 検索 | `GET /api/workspaces/{wsId}/search?q=...` | PostgreSQL `body_tsv` を使った全文検索 |

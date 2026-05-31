@@ -28,10 +28,10 @@ spring:
       port: ${REDIS_PORT:6379}
   servlet:
     multipart:
-      # アバターの上限は 2MB（サービス層で厳密判定し 413 を返す）。
-      # ここはフレームワーク側の保険として余裕を持たせ、極端に巨大なアップロードのみ弾く。
-      max-file-size: 10MB
-      max-request-size: 10MB
+      # アバター 2MB / 添付 10MB の上限はいずれもサービス層で厳密判定し 413 を返す。
+      # ここはフレームワーク側の保険として一回り余裕を持たせ、極端に巨大なアップロードのみ弾く。
+      max-file-size: 12MB
+      max-request-size: 12MB
 
 server:
   port: 8080

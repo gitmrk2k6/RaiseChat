@@ -26,6 +26,11 @@ public class S3ObjectStorage implements ObjectStorage {
 
         s3Client.putObject(request, RequestBody.fromBytes(data));
 
+        return resolveUrl(key);
+    }
+
+    @Override
+    public String resolveUrl(String key) {
         return props.resolvePublicBaseUrl() + "/" + key;
     }
 }

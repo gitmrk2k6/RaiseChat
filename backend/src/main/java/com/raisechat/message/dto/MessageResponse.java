@@ -15,15 +15,21 @@ public record MessageResponse(
         String body,
         Long parentMessageId,
         List<Long> mentionedUserIds,
+        List<AttachmentResponse> attachments,
         OffsetDateTime editedAt,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt
 ) {
     public static MessageResponse from(Message m) {
-        return from(m, List.of());
+        return from(m, List.of(), List.of());
     }
 
     public static MessageResponse from(Message m, List<Long> mentionedUserIds) {
+        return from(m, mentionedUserIds, List.of());
+    }
+
+    public static MessageResponse from(
+            Message m, List<Long> mentionedUserIds, List<AttachmentResponse> attachments) {
         return new MessageResponse(
                 m.getId(),
                 m.getChannel() != null ? m.getChannel().getId() : null,
@@ -34,6 +40,7 @@ public record MessageResponse(
                 m.getBody(),
                 m.getParent() != null ? m.getParent().getId() : null,
                 mentionedUserIds,
+                attachments,
                 m.getEditedAt(),
                 m.getCreatedAt(),
                 m.getUpdatedAt()
