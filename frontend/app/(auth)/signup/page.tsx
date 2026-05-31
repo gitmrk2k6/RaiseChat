@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { ApiError } from "@/lib/api/problem";
 
-const AFTER_SIGNUP_PATH = "/workspaces/ws-1/channels/ch-general";
+// サインアップ後の遷移先。/workspaces で一覧を取得し、先頭ワークスペースへ解決する。
+const AFTER_SIGNUP_PATH = "/workspaces";
 
 export default function SignupPage() {
   const router = useRouter();

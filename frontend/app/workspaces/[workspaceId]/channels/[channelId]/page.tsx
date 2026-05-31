@@ -2,9 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { notFound } from "next/navigation";
-import { getChannel } from "@/lib/mock/channels";
+import { useQuery } from "@tanstack/react-query";
+import { getChannel as getMockChannel } from "@/lib/mock/channels";
 import { getChannelMessages, getThreadReplies } from "@/lib/mock/messages";
 import { currentUserId } from "@/lib/mock/users";
+import { getChannel as fetchChannel } from "@/lib/api/channels";
+import { queryKeys } from "@/lib/api/queryKeys";
 import { ChannelHeader } from "@/components/chat/ChannelHeader";
 import { MessageList } from "@/components/chat/MessageList";
 import { MessageInput } from "@/components/chat/MessageInput";
@@ -12,8 +15,15 @@ import { ThreadPanel } from "@/components/chat/ThreadPanel";
 import type { Message } from "@/types";
 
 export default function ChannelPage({ params }: { params: { channelId: string } }) {
-  const channel = getChannel(params.channelId);
-  if (!channel) notFound();
+  // チャンネルのメタは mock を優先。mock に無い（＝実 API のチャンネル）場合はヘッダ用に実 API から取得する。
+  // メッセージ本体の実 API 化は別単位のため、ここではヘッダのみ実データに橋渡しする。
+  const mockChannel = getMockChannel(params.channelId);
+  const { data: apiChannel, isLoading: channelLoading } = useQuery({
+    queryKey: queryKeys.channel(params.channelId),
+    queryFn: () => fetchChannel(params.channelId),
+    enabled: !mockChannel,
+  });
+  const channel = mockChannel ?? apiChannel;
 
   const initial = useMemo(() => getChannelMessages(params.channelId), [params.channelId]);
   const [messages, setMessages] = useState<Message[]>(initial);
@@ -120,6 +130,17 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
   };
 
   const parent = threadParentId ? messages.find((m) => m.id === threadParentId) : null;
+
+  if (!channel) {
+    if (channelLoading) {
+      return (
+        <div className="flex-1 flex items-center justify-center text-sm text-gray-500">
+          読み込み中…
+        </div>
+      );
+    }
+    notFound();
+  }
 
   return (
     <>

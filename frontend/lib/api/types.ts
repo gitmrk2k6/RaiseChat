@@ -31,3 +31,31 @@ export interface MeResponse {
   avatarUrl: string | null;
   statusMessage: string | null;
 }
+
+/** 一覧系の共通ページングレスポンス（docs/api-design.md §1.2）。 */
+export interface Page<T> {
+  items: T[];
+  /** 次ページの不透明カーソル。次ページがなければ null。 */
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+/** GET /api/workspaces のレスポンス要素（Workspace）。id は数値（BIGINT）。 */
+export interface WorkspaceDto {
+  id: number;
+  name: string;
+  description: string | null;
+  ownerUserId: number;
+  createdAt: string;
+}
+
+/** GET /api/workspaces/{wsId}/channels のレスポンス要素（Channel）。id は数値（BIGINT）。 */
+export interface ChannelDto {
+  id: number;
+  workspaceId: number;
+  name: string;
+  description: string | null;
+  type: "PUBLIC" | "PRIVATE";
+  createdByUserId: number;
+  createdAt: string;
+}

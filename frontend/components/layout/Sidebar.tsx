@@ -4,19 +4,34 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ChevronDown, ChevronRight, Hash, Lock, Plus, Edit3 } from "lucide-react";
-import { getChannelsByWorkspace } from "@/lib/mock/channels";
+import { useQuery } from "@tanstack/react-query";
 import { getDmsByWorkspace } from "@/lib/mock/dms";
-import { getWorkspace } from "@/lib/mock/workspaces";
 import { currentUserId, getUser } from "@/lib/mock/users";
+import { listChannels } from "@/lib/api/channels";
+import { getWorkspace } from "@/lib/api/workspaces";
+import { queryKeys } from "@/lib/api/queryKeys";
+import { useAuth } from "@/lib/auth/AuthContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/utils";
 import { CreateChannelModal } from "@/components/modals/CreateChannelModal";
 
 export function Sidebar() {
   const params = useParams<{ workspaceId: string; channelId?: string; dmId?: string }>();
-  const workspaceId = params.workspaceId ?? "ws-1";
-  const workspace = getWorkspace(workspaceId);
-  const channels = getChannelsByWorkspace(workspaceId);
+  const workspaceId = params.workspaceId;
+  const { user } = useAuth();
+
+  const { data: workspace } = useQuery({
+    queryKey: queryKeys.workspace(workspaceId),
+    queryFn: () => getWorkspace(workspaceId),
+    enabled: !!workspaceId,
+  });
+  const { data: channels = [] } = useQuery({
+    queryKey: queryKeys.channels(workspaceId),
+    queryFn: () => listChannels(workspaceId),
+    enabled: !!workspaceId,
+  });
+
+  // DM 一覧は別単位（F-06）で実 API 化予定。当面は mock 据え置き。
   const dms = getDmsByWorkspace(workspaceId);
 
   const [channelsOpen, setChannelsOpen] = useState(true);
@@ -28,10 +43,12 @@ export function Sidebar() {
       <aside className="w-64 bg-slack-aubergine text-slack-textOnPurple flex flex-col shrink-0">
         <div className="px-4 py-3 border-b border-slack-divider flex items-center justify-between">
           <div>
-            <div className="text-white font-bold text-base leading-tight">{workspace.name}</div>
+            <div className="text-white font-bold text-base leading-tight">
+              {workspace?.name ?? "…"}
+            </div>
             <div className="text-xs text-slack-textOnPurple/80 flex items-center gap-1.5 mt-0.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
-              {getUser(currentUserId).displayName}
+              {user?.displayName ?? ""}
             </div>
           </div>
           <button
