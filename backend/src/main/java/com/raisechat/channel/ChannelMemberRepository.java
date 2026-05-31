@@ -45,4 +45,15 @@ public interface ChannelMemberRepository extends JpaRepository<ChannelMember, Lo
     List<ChannelMember> findActiveByWorkspaceIdAndUserId(
             @Param("workspaceId") Long workspaceId,
             @Param("userId") Long userId);
+
+    // F-16 ワークスペース削除用: 当該ワークスペース内の全アクティブなチャンネルメンバー行。
+    // left_at セット（論理退出）と Redis クリア（user.id / channel.id 利用）の両方に使う。
+    @Query("""
+            SELECT cm FROM ChannelMember cm
+            JOIN FETCH cm.channel c
+            JOIN FETCH cm.user u
+            WHERE c.workspace.id = :workspaceId
+              AND cm.leftAt IS NULL
+            """)
+    List<ChannelMember> findActiveByWorkspaceId(@Param("workspaceId") Long workspaceId);
 }

@@ -185,6 +185,77 @@ class WorkspaceControllerIT {
                 .andExpect(status().isUnauthorized());
     }
 
+    // ---------- DELETE /api/workspaces/{wsId}（F-16 ワークスペース削除） ----------
+
+    @Test
+    void deleteWorkspaceByOwnerReturns204AndCascadesSoftDelete() throws Exception {
+        // 事前条件: haruka は ws-1 と そのチャンネル general(1) のアクティブメンバー。
+        Assertions.assertTrue(
+                channelMemberRepository.findByChannelIdAndUserIdAndLeftAtIsNull(1L, HARUKA_ID).isPresent());
+
+        // haruka の未読/メンションバッジを Redis に積んでおく（削除で消えることを確認するため）。
+        redisTemplate.opsForHash().put("unread:" + HARUKA_ID, "channel:1", "3");
+        redisTemplate.opsForHash().put("mention:" + HARUKA_ID, "channel:1", "1");
+
+        String ownerToken = login("keisuke");
+        mockMvc.perform(delete("/api/workspaces/" + WS_1)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isNoContent());
+
+        // ワークスペースが論理削除され、詳細取得が 404 になる。
+        mockMvc.perform(get("/api/workspaces/" + WS_1)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isNotFound());
+
+        // 全メンバーのワークスペース/チャンネルメンバーシップが論理退出している。
+        Assertions.assertTrue(
+                workspaceMemberRepository.findByWorkspaceIdAndUserIdAndLeftAtIsNull(WS_1, HARUKA_ID).isEmpty());
+        Assertions.assertTrue(
+                workspaceMemberRepository.findByWorkspaceIdAndUserIdAndLeftAtIsNull(WS_1, KEISUKE_ID).isEmpty());
+        Assertions.assertTrue(channelMemberRepository.findByChannelIdAndUserIdAndLeftAtIsNull(1L, HARUKA_ID).isEmpty());
+        Assertions.assertTrue(channelMemberRepository.findByChannelIdAndUserIdAndLeftAtIsNull(1L, KEISUKE_ID).isEmpty());
+
+        // Redis の未読/メンションバッジが消えている。
+        Assertions.assertFalse(redisTemplate.opsForHash().hasKey("unread:" + HARUKA_ID, "channel:1"));
+        Assertions.assertFalse(redisTemplate.opsForHash().hasKey("mention:" + HARUKA_ID, "channel:1"));
+    }
+
+    @Test
+    void deleteWorkspaceByNonOwnerReturns403() throws Exception {
+        // haruka は ws-1 の MEMBER（OWNER ではない）→ 削除できない
+        String memberToken = login("haruka");
+
+        mockMvc.perform(delete("/api/workspaces/" + WS_1)
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.title").value("Forbidden"));
+    }
+
+    @Test
+    void deleteWorkspaceByNonMemberReturns403() throws Exception {
+        // kenta は ws-2 (Side Project) のメンバーではない → 403
+        String token = login("kenta");
+
+        mockMvc.perform(delete("/api/workspaces/" + WS_2)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void deleteNonExistentWorkspaceReturns404() throws Exception {
+        String ownerToken = login("keisuke");
+
+        mockMvc.perform(delete("/api/workspaces/9999")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deleteWorkspaceWithoutTokenReturns401() throws Exception {
+        mockMvc.perform(delete("/api/workspaces/" + WS_1))
+                .andExpect(status().isUnauthorized());
+    }
+
     // ---------- helpers ----------
 
     private String login(String userId) throws Exception {

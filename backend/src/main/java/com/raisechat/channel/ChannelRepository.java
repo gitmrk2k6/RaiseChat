@@ -12,6 +12,9 @@ public interface ChannelRepository extends JpaRepository<Channel, Long> {
 
     Optional<Channel> findByIdAndDeletedAtIsNull(Long id);
 
+    // F-16 ワークスペース削除用: 配下の未削除チャンネルをまとめて論理削除するため一括取得する。
+    List<Channel> findByWorkspaceIdAndDeletedAtIsNull(Long workspaceId);
+
     // ワークスペース内の同名チャンネル重複検査（大文字小文字を無視。DB のユニーク制約と同じ意味）
     boolean existsByWorkspaceIdAndNameIgnoreCaseAndDeletedAtIsNull(Long workspaceId, String name);
 

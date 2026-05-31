@@ -248,6 +248,36 @@ public class WorkspaceService {
         }
     }
 
+    // ワークスペースを論理削除する。OWNER のみ。
+    // workspaces / 配下の全 channels を deleted_at で論理削除し、全 workspace_members /
+    // channel_members を論理退出（left_at）させ、各メンバーの Redis 未読/メンションカウンタから
+    // 該当チャンネルを除去する。これによりアクセス・幽霊バッジを残さず自己完結で teardown する。
+    @Transactional
+    public void delete(Long requesterId, Long workspaceId) {
+        Workspace ws = workspaceRepository.findByIdAndDeletedAtIsNull(workspaceId)
+                .orElseThrow(() -> new WorkspaceNotFoundException(workspaceId));
+        requireWorkspaceOwner(workspaceId, requesterId);
+
+        OffsetDateTime now = OffsetDateTime.now();
+        ws.setDeletedAt(now);
+
+        // 配下チャンネルを論理削除（channel / message API は channel.deleted_at で弾く）。
+        for (Channel channel : channelRepository.findByWorkspaceIdAndDeletedAtIsNull(workspaceId)) {
+            channel.setDeletedAt(now);
+        }
+
+        // 全チャンネルメンバーを論理退出させ、未読/メンションバッジを消す。
+        for (ChannelMember cm : channelMemberRepository.findActiveByWorkspaceId(workspaceId)) {
+            cm.setLeftAt(now);
+            unreadCounterStore.clear(cm.getUser().getId(), UnreadCounterStore.channelField(cm.getChannel().getId()));
+        }
+
+        // 全ワークスペースメンバーを論理退出させる。
+        for (WorkspaceMember member : workspaceMemberRepository.findActiveByWorkspaceIdWithUser(workspaceId)) {
+            member.setLeftAt(now);
+        }
+    }
+
     // 呼び出しユーザーがワークスペースの OWNER であることを保証する。
     // 非メンバー・非 OWNER ともに 403（WorkspaceForbiddenException）。
     private void requireWorkspaceOwner(Long workspaceId, Long userId) {
