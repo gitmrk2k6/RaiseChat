@@ -9,6 +9,7 @@ import com.raisechat.dm.DmRoom;
 import com.raisechat.dm.DmRoomRepository;
 import com.raisechat.dm.DmService;
 import com.raisechat.message.dto.AddReactionRequest;
+import com.raisechat.message.dto.AttachmentResponse;
 import com.raisechat.message.dto.EditMessageRequest;
 import com.raisechat.message.dto.MessageListResponse;
 import com.raisechat.message.dto.MessageResponse;
@@ -54,6 +55,7 @@ public class MessageService {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
     private final MentionService mentionService;
+    private final AttachmentService attachmentService;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
@@ -80,6 +82,7 @@ public class MessageService {
             UserRepository userRepository,
             NotificationService notificationService,
             MentionService mentionService,
+            AttachmentService attachmentService,
             StringRedisTemplate redisTemplate,
             ObjectMapper objectMapper
     ) {
@@ -93,6 +96,7 @@ public class MessageService {
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.mentionService = mentionService;
+        this.attachmentService = attachmentService;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
     }
@@ -210,9 +214,11 @@ public class MessageService {
         messageRepository.saveAndFlush(message);
         entityManager.refresh(message);
 
-        // 編集後の本文に合わせてメンションを再同期する。
+        // 編集後の本文に合わせてメンションを再同期する。添付は編集で変化しないが、
+        // 既存クライアントが編集イベントだけで描画し直せるよう現在の添付も含める。
         List<Long> mentionedUserIds = mentionService.syncMentions(message);
-        MessageResponse dto = MessageResponse.from(message, mentionedUserIds);
+        List<AttachmentResponse> attachments = attachmentService.findByMessageId(messageId);
+        MessageResponse dto = MessageResponse.from(message, mentionedUserIds, attachments);
         publishEditDeleteEvent(message, WsEvent.EventType.MESSAGE_EDITED, dto);
         return dto;
     }
@@ -404,12 +410,16 @@ public class MessageService {
         }
     }
 
-    // メンション先を 1 クエリで一括ロードしてから DTO 化する（メッセージごとの N+1 を避ける）。
+    // メンション・添付を 1 クエリずつ一括ロードしてから DTO 化する（メッセージごとの N+1 を避ける）。
     private List<MessageResponse> toResponses(List<Message> page) {
         List<Long> messageIds = page.stream().map(Message::getId).toList();
         Map<Long, List<Long>> mentions = mentionService.findMentionsByMessageIds(messageIds);
+        Map<Long, List<AttachmentResponse>> attachments = attachmentService.findByMessageIds(messageIds);
         return page.stream()
-                .map(m -> MessageResponse.from(m, mentions.getOrDefault(m.getId(), List.of())))
+                .map(m -> MessageResponse.from(
+                        m,
+                        mentions.getOrDefault(m.getId(), List.of()),
+                        attachments.getOrDefault(m.getId(), List.of())))
                 .toList();
     }
 
