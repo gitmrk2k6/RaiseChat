@@ -31,7 +31,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
-        config.enableSimpleBroker("/topic");
+        // /topic: 公開トピック（チャンネル/DM/スレッド）。/queue: ユーザー個別キュー（F-14 未読通知）。
+        // convertAndSendToUser(...) は /user/{name}/queue/** へ解決されるため、/queue を broker が
+        // 中継できるよう登録しておかないと未読通知フレームが無音で破棄される。
+        config.enableSimpleBroker("/topic", "/queue");
         config.setApplicationDestinationPrefixes("/app");
     }
 

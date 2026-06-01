@@ -14,8 +14,10 @@ import {
   listReplies,
   removeReaction,
 } from "@/lib/api/messages";
+import { markChannelRead } from "@/lib/api/notifications";
 import { queryKeys } from "@/lib/api/queryKeys";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useUnread } from "@/lib/notifications/NotificationContext";
 import { useStompSubscription } from "@/lib/ws/useStompSubscription";
 import {
   applyEdited,
@@ -34,6 +36,17 @@ import type { Message } from "@/types";
 export default function ChannelPage({ params }: { params: { channelId: string } }) {
   const { user } = useAuth();
   const meId = user ? String(user.id) : null;
+  const { getChannelUnread } = useUnread();
+  const channelUnread = getChannelUnread(params.channelId).unread;
+
+  // このチャンネルを開いている間は既読を維持する。
+  //  - 開いた時、および表示中に未読が増えるたびに最新まで既読化（POST /api/channels/{id}/read, body 無し＝最新）
+  //  - 既に未読 0 なら何もしない（無駄な再既読 POST を避ける）
+  // 確定（バッジ 0 化）はサーバ発の WS 通知（/user/queue/notifications → NotificationProvider）に委ねる。
+  useEffect(() => {
+    if (channelUnread === 0) return;
+    void markChannelRead(params.channelId).catch(() => {});
+  }, [params.channelId, channelUnread]);
 
   // チャンネルのメタは mock を優先。mock に無い（＝実 API のチャンネル）場合はヘッダ用に実 API から取得する。
   const mockChannel = getMockChannel(params.channelId);

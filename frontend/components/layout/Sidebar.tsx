@@ -10,6 +10,7 @@ import { listDmRooms } from "@/lib/api/dm";
 import { getWorkspace } from "@/lib/api/workspaces";
 import { queryKeys } from "@/lib/api/queryKeys";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useUnread } from "@/lib/notifications/NotificationContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/utils";
 import { CreateChannelModal } from "@/components/modals/CreateChannelModal";
@@ -18,6 +19,7 @@ export function Sidebar() {
   const params = useParams<{ workspaceId: string; channelId?: string; dmId?: string }>();
   const workspaceId = params.workspaceId;
   const { user } = useAuth();
+  const { getChannelUnread, getDmUnread } = useUnread();
 
   const { data: workspace } = useQuery({
     queryKey: queryKeys.workspace(workspaceId),
@@ -72,6 +74,7 @@ export function Sidebar() {
           >
             {channels.map((c) => {
               const active = c.id === params.channelId;
+              const { unread, mention } = getChannelUnread(c.id);
               return (
                 <Link
                   key={c.id}
@@ -81,20 +84,20 @@ export function Sidebar() {
                     active
                       ? "bg-slack-highlight text-white font-bold"
                       : "text-slack-textOnPurple hover:bg-white/5",
-                    c.unreadCount > 0 && !active && "text-white font-semibold",
+                    unread > 0 && !active && "text-white font-semibold",
                   )}
                 >
                   <span className="flex items-center gap-2 truncate">
                     {c.type === "private" ? <Lock size={14} /> : <Hash size={14} />}
                     <span className="truncate">{c.name}</span>
                   </span>
-                  {c.hasMention ? (
+                  {mention > 0 && !active ? (
                     <span className="bg-slack-unread text-white text-[10px] font-bold rounded-full px-1.5 min-w-[18px] h-[18px] flex items-center justify-center">
-                      {c.unreadCount}
+                      {unread}
                     </span>
-                  ) : c.unreadCount > 0 && !active ? (
+                  ) : unread > 0 && !active ? (
                     <span className="bg-white/20 text-white text-[10px] font-bold rounded-full px-1.5 min-w-[18px] h-[18px] flex items-center justify-center">
-                      {c.unreadCount}
+                      {unread}
                     </span>
                   ) : null}
                 </Link>
@@ -112,6 +115,7 @@ export function Sidebar() {
               const partner =
                 d.members?.find((m) => m.id !== meId) ?? d.members?.[0];
               const active = d.id === params.dmId;
+              const { unread } = getDmUnread(d.id);
               return (
                 <Link
                   key={d.id}
@@ -121,7 +125,7 @@ export function Sidebar() {
                     active
                       ? "bg-slack-highlight text-white font-bold"
                       : "text-slack-textOnPurple hover:bg-white/5",
-                    d.unreadCount > 0 && !active && "text-white font-semibold",
+                    unread > 0 && !active && "text-white font-semibold",
                   )}
                 >
                   <span className="flex items-center gap-2 truncate">
@@ -132,9 +136,9 @@ export function Sidebar() {
                     />
                     <span className="truncate">{partner?.displayName ?? "(不明)"}</span>
                   </span>
-                  {d.unreadCount > 0 && !active && (
+                  {unread > 0 && !active && (
                     <span className="bg-slack-unread text-white text-[10px] font-bold rounded-full px-1.5 min-w-[18px] h-[18px] flex items-center justify-center">
-                      {d.unreadCount}
+                      {unread}
                     </span>
                   )}
                 </Link>

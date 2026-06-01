@@ -11,8 +11,10 @@ import {
   listDmMessages,
   removeReaction,
 } from "@/lib/api/messages";
+import { markDmRead } from "@/lib/api/notifications";
 import { queryKeys } from "@/lib/api/queryKeys";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useUnread } from "@/lib/notifications/NotificationContext";
 import { useStompSubscription } from "@/lib/ws/useStompSubscription";
 import {
   applyEdited,
@@ -34,6 +36,16 @@ export default function DmPage({
 }) {
   const { user } = useAuth();
   const meId = user ? String(user.id) : null;
+  const { getDmUnread } = useUnread();
+  const dmUnread = getDmUnread(params.dmId).unread;
+
+  // この DM を開いている間は既読を維持する（チャンネルと同方針）。
+  //  - 開いた時、および表示中に未読が増えるたびに最新まで既読化（POST /api/dm/rooms/{id}/read, body 無し＝最新）
+  //  - 既に未読 0 なら何もしない。確定（バッジ 0 化）はサーバ発 WS 通知に委ねる。
+  useEffect(() => {
+    if (dmUnread === 0) return;
+    void markDmRead(params.dmId).catch(() => {});
+  }, [params.dmId, dmUnread]);
 
   // 単体ルーム取得 API は無いため、ルーム一覧（Sidebar と同 queryKey）から id で引く。
   const { data: rooms, isLoading: roomsLoading } = useQuery({

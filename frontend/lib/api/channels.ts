@@ -2,7 +2,8 @@
 // DTO（id は数値 BIGINT, type は大文字）をフロントの ViewModel（id は string, type は小文字）へ変換する。
 // 一覧 API に含まれないフィールド（topic 以外のメタ）はプレースホルダで補完する:
 //  - topic    ← API の description
-//  - unreadCount / hasMention → 0 / false（未読は F-14 で別単位として接続予定）
+//  - unreadCount / hasMention → 0 / false（型を満たすための既定値。実値は描画時に
+//    NotificationProvider(useUnread) が scope 単位で上書きする。F-14 接続済み）
 //  - memberIds → []（一覧 API に含まれない）
 
 import { api } from "./client";
