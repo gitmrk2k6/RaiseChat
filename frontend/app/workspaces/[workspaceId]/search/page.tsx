@@ -152,10 +152,13 @@ function SearchHitCard({
   dmPartnerName?: string;
   q: string;
 }) {
-  // v1 はトップレベルへのジャンプのみ。返信ヒット（parentId あり）は親メッセージへ寄せる。
+  // 返信ヒット（parentId あり）は親メッセージへ寄せる（?msg=親id）。
+  // チャンネルの返信ヒットだけは、遷移先でスレッドを開いて該当返信までスクロールできるよう
+  // &reply=<返信id> も付ける。DM はフロントにスレッド UI が無いため親ジャンプのみ。
   const targetId = hit.parentId ?? hit.messageId;
   const href = hit.channelId
-    ? `/workspaces/${workspaceId}/channels/${hit.channelId}?msg=${targetId}`
+    ? `/workspaces/${workspaceId}/channels/${hit.channelId}?msg=${targetId}` +
+      (hit.parentId ? `&reply=${hit.messageId}` : "")
     : hit.dmRoomId
       ? `/workspaces/${workspaceId}/dm/${hit.dmRoomId}?msg=${targetId}`
       : "#";

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { Message } from "@/types";
 import { MessageItem } from "./MessageItem";
@@ -8,6 +9,8 @@ import { MessageInput } from "./MessageInput";
 interface Props {
   parent: Message;
   replies: Message[];
+  /** 検索ジャンプ対象の返信 id。返信がロードされたらその位置へスクロールして一時ハイライトする。 */
+  highlightReplyId?: string | null;
   onClose: () => void;
   onReply: (body: string) => void;
   onReactParent: (emoji: string) => void;
@@ -21,6 +24,7 @@ interface Props {
 export function ThreadPanel({
   parent,
   replies,
+  highlightReplyId,
   onClose,
   onReply,
   onReactParent,
@@ -30,6 +34,26 @@ export function ThreadPanel({
   onDeleteParent,
   onDeleteReply,
 }: Props) {
+  // 検索ジャンプ（返信ヒット）: 対象返信が replies に現れたら、その要素へスクロールして約2秒フラッシュ。
+  // 返信は listReplies で非同期に届くため、replies の変化を依存に含めて遅れて現れるケースに対応する。
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const handledHighlightRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!highlightReplyId) return;
+    if (handledHighlightRef.current === highlightReplyId) return;
+    if (!replies.some((r) => r.id === highlightReplyId)) return; // まだ未ロード
+    const el = containerRef.current?.querySelector(
+      `[data-message-id="${highlightReplyId}"]`,
+    ) as HTMLElement | null;
+    if (!el) return;
+    handledHighlightRef.current = highlightReplyId;
+    el.scrollIntoView({ block: "center" });
+    setFlashId(highlightReplyId);
+    const t = setTimeout(() => setFlashId(null), 2000);
+    return () => clearTimeout(t);
+  }, [highlightReplyId, replies]);
+
   return (
     <aside className="w-[400px] border-l border-gray-200 bg-white flex flex-col shrink-0">
       <div className="h-14 px-4 flex items-center justify-between border-b border-gray-200 shrink-0">
@@ -46,7 +70,7 @@ export function ThreadPanel({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
+      <div ref={containerRef} className="flex-1 overflow-y-auto scrollbar-thin">
         <MessageItem
           message={parent}
           onReact={onReactParent}
@@ -68,6 +92,7 @@ export function ThreadPanel({
             onReact={(emoji) => onReactReply(r.id, emoji)}
             onEdit={(b) => onEditReply(r.id, b)}
             onDelete={() => onDeleteReply(r.id)}
+            highlighted={r.id === flashId}
           />
         ))}
       </div>
