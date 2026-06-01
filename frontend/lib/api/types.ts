@@ -115,3 +115,20 @@ export interface MessageDto {
   createdAt: string;
   updatedAt: string;
 }
+
+/**
+ * リアクション集計（ReactionResponse）。1 メッセージ・1 emoji の合計。
+ * REST（POST /api/messages/{id}/reactions）レスポンスと WS の REACTION_ADDED/REMOVED payload が同形。
+ * userIds は付与したユーザー id（数値・古い順）。count は冗長だが配信時点の合計を 1 値で持つ。
+ */
+export interface ReactionDto {
+  messageId: number;
+  emoji: string;
+  count: number;
+  userIds: number[];
+}
+
+/** PATCH /api/messages/{id} のリクエストボディ（EditMessageRequest）。 */
+export interface EditMessageRequest {
+  body: string;
+}

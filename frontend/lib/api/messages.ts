@@ -7,7 +7,13 @@
 //  - author.avatarColor   → authorId から決定論的に導出（後述 avatarColorFor）
 
 import { api } from "./client";
-import type { AttachmentDto, MessageDto, Page } from "./types";
+import type {
+  AttachmentDto,
+  EditMessageRequest,
+  MessageDto,
+  Page,
+  ReactionDto,
+} from "./types";
 import type { Attachment, Message } from "@/types";
 
 // mock の配色（lib/mock/users.ts）と同系統のパレット。authorId から決定論的に 1 色選ぶ。
@@ -94,6 +100,35 @@ export async function listChannelMessages(
     nextCursor: page.nextCursor,
     hasMore: page.hasMore,
   };
+}
+
+/**
+ * PATCH /api/messages/{id} メッセージ本文を編集（投稿者のみ。F-07）。
+ * レスポンスの編集後 Message は使わず、確定は WS の MESSAGE_EDITED 受信に委ねる（楽観更新なし）。
+ */
+export async function editMessage(messageId: string, body: string): Promise<void> {
+  const req: EditMessageRequest = { body };
+  await api.patch<MessageDto>(`/api/messages/${Number(messageId)}`, req);
+}
+
+/** DELETE /api/messages/{id} メッセージを削除（投稿者 / OWNER。F-07）。確定は WS の MESSAGE_DELETED 受信で。 */
+export async function deleteMessage(messageId: string): Promise<void> {
+  await api.delete<void>(`/api/messages/${Number(messageId)}`);
+}
+
+/**
+ * POST /api/messages/{id}/reactions リアクション付与（F-11）。冪等（既付与なら 200）。
+ * 確定は WS の REACTION_ADDED 受信に委ねる（新規付与時のみ配信される）。
+ */
+export async function addReaction(messageId: string, emoji: string): Promise<void> {
+  await api.post<ReactionDto>(`/api/messages/${Number(messageId)}/reactions`, { emoji });
+}
+
+/** DELETE /api/messages/{id}/reactions/{emoji} リアクション解除（F-11）。確定は WS の REACTION_REMOVED 受信で。 */
+export async function removeReaction(messageId: string, emoji: string): Promise<void> {
+  await api.delete<void>(
+    `/api/messages/${Number(messageId)}/reactions/${encodeURIComponent(emoji)}`,
+  );
 }
 
 /**

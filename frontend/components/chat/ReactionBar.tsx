@@ -2,7 +2,7 @@
 
 import { SmilePlus } from "lucide-react";
 import { Reaction } from "@/types";
-import { currentUserId } from "@/lib/mock/users";
+import { useAuth } from "@/lib/auth/AuthContext";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -12,11 +12,13 @@ interface Props {
 }
 
 export function ReactionBar({ reactions, onToggle, onAdd }: Props) {
+  const { user } = useAuth();
+  const meId = user ? String(user.id) : null;
   if (reactions.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1 mt-1.5">
       {reactions.map((r) => {
-        const mine = r.userIds.includes(currentUserId);
+        const mine = meId != null && r.userIds.includes(meId);
         return (
           <button
             key={r.emoji}

@@ -7,10 +7,10 @@
 
 import { getStompClient } from "./client";
 import { toMessage } from "@/lib/api/messages";
-import type { MessageDto } from "@/lib/api/types";
-import type { Message } from "@/types";
+import type { MessageDto, ReactionDto } from "@/lib/api/types";
+import type { Message, Reaction } from "@/types";
 
-/** バックエンド WsEvent.EventType（enum 名）。今単位では MESSAGE_CREATED のみ扱う。 */
+/** バックエンド WsEvent.EventType（enum 名）。 */
 export type WsEventType =
   | "MESSAGE_CREATED"
   | "MESSAGE_EDITED"
@@ -37,6 +37,58 @@ export function parseWsEvent(body: string): WsEvent | null {
 export function messageCreatedToMessage(event: WsEvent): Message | null {
   if (event.type !== "MESSAGE_CREATED") return null;
   return toMessage(event.payload as MessageDto);
+}
+
+/**
+ * MESSAGE_EDITED を messages へ適用する（body / editedAt / mentions / attachments を更新）。
+ * payload には reactions / thread 系が含まれないため、それらは既存値を保持する（潰さない）。
+ */
+export function applyEdited(messages: Message[], event: WsEvent): Message[] {
+  if (event.type !== "MESSAGE_EDITED") return messages;
+  const dto = event.payload as MessageDto;
+  const id = String(dto.id);
+  return messages.map((m) => {
+    if (m.id !== id) return m;
+    const updated = toMessage(dto);
+    return {
+      ...updated,
+      reactions: m.reactions,
+      threadReplyCount: m.threadReplyCount,
+      threadParticipantIds: m.threadParticipantIds,
+    };
+  });
+}
+
+/** MESSAGE_DELETED の対象メッセージ id（string）を返す。それ以外は null。 */
+export function deletedMessageId(event: WsEvent): string | null {
+  if (event.type !== "MESSAGE_DELETED") return null;
+  return String((event.payload as MessageDto).id);
+}
+
+/**
+ * REACTION_ADDED / REACTION_REMOVED を messages へ適用する。
+ * payload は emoji 単位の集計（セット型）なので、userIds をそのまま上書きする
+ * → 自分の操作の echo でも、他人の操作でも冪等に収束する。userIds が空なら該当 emoji を消す。
+ */
+export function applyReaction(messages: Message[], event: WsEvent): Message[] {
+  if (event.type !== "REACTION_ADDED" && event.type !== "REACTION_REMOVED") {
+    return messages;
+  }
+  const dto = event.payload as ReactionDto;
+  const id = String(dto.messageId);
+  const userIds = dto.userIds.map(String);
+  return messages.map((m) => {
+    if (m.id !== id) return m;
+    let reactions: Reaction[];
+    if (userIds.length === 0) {
+      reactions = m.reactions.filter((r) => r.emoji !== dto.emoji);
+    } else if (m.reactions.some((r) => r.emoji === dto.emoji)) {
+      reactions = m.reactions.map((r) => (r.emoji === dto.emoji ? { ...r, userIds } : r));
+    } else {
+      reactions = [...m.reactions, { emoji: dto.emoji, userIds }];
+    }
+    return { ...m, reactions };
+  });
 }
 
 /** チャンネルへ新規メッセージを送信する（/app/channels/{id}/messages）。 */

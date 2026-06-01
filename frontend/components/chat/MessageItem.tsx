@@ -6,7 +6,8 @@ import { Avatar } from "@/components/ui/Avatar";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ReactionBar } from "./ReactionBar";
 import type { Message } from "@/types";
-import { getUser, currentUserId } from "@/lib/mock/users";
+import { getUser } from "@/lib/mock/users";
+import { useAuth } from "@/lib/auth/AuthContext";
 import { formatMessageTime } from "@/lib/utils";
 
 interface Props {
@@ -35,7 +36,9 @@ export function MessageItem({
     displayName: message.author?.displayName ?? fallback.displayName,
     avatarColor: message.author?.avatarColor ?? fallback.avatarColor,
   };
-  const isMine = message.authorId === currentUserId;
+  const { user } = useAuth();
+  const meId = user ? String(user.id) : null;
+  const isMine = meId != null && message.authorId === meId;
 
   const [hover, setHover] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);

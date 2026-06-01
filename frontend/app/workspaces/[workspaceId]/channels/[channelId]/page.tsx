@@ -7,10 +7,20 @@ import { getChannel as getMockChannel } from "@/lib/mock/channels";
 import { getThreadReplies } from "@/lib/mock/messages";
 import { currentUserId } from "@/lib/mock/users";
 import { getChannel as fetchChannel } from "@/lib/api/channels";
-import { listChannelMessages } from "@/lib/api/messages";
+import {
+  addReaction,
+  deleteMessage,
+  editMessage,
+  listChannelMessages,
+  removeReaction,
+} from "@/lib/api/messages";
 import { queryKeys } from "@/lib/api/queryKeys";
+import { useAuth } from "@/lib/auth/AuthContext";
 import { useStompSubscription } from "@/lib/ws/useStompSubscription";
 import {
+  applyEdited,
+  applyReaction,
+  deletedMessageId,
   messageCreatedToMessage,
   parseWsEvent,
   publishChannelMessage,
@@ -22,6 +32,9 @@ import { ThreadPanel } from "@/components/chat/ThreadPanel";
 import type { Message } from "@/types";
 
 export default function ChannelPage({ params }: { params: { channelId: string } }) {
+  const { user } = useAuth();
+  const meId = user ? String(user.id) : null;
+
   // チャンネルのメタは mock を優先。mock に無い（＝実 API のチャンネル）場合はヘッダ用に実 API から取得する。
   const mockChannel = getMockChannel(params.channelId);
   const { data: apiChannel, isLoading: channelLoading } = useQuery({
@@ -53,12 +66,14 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
     return [...data.pages.flatMap((p) => p.items)].reverse();
   }, [data]);
 
-  // トップレベルメッセージの送信は実 WS（/app/channels/{id}/messages）へ。受信は /topic/channels/{id}
-  // の MESSAGE_CREATED を id マージで messages へ合流させる（履歴ハイドレーションと同経路）:
-  //  - 未保有 id のみ追加（既存オブジェクトは上書きしない＝ローカルの編集/リアクションを保持）
-  //  - ローカル削除済み id は再追加しない
-  //  - 自分の送信もサーバ echo として同じ経路で届くため、楽観 insert は行わない
-  // 編集/削除/リアクション/スレッドは今単位では mock 据え置き（後続単位で実 API 接続）。
+  // トップレベルメッセージの送受信・編集・削除・リアクションはすべて実 API ＋ WS。
+  // 受信は /topic/channels/{id} の WsEvent を type で振り分けて messages へ反映する:
+  //  - MESSAGE_CREATED: 未保有 id のみ追加（既存は上書きしない／ローカル削除済み id は再追加しない）
+  //  - MESSAGE_EDITED : 該当 id の body/editedAt 等を更新（reactions は潰さず保持）
+  //  - MESSAGE_DELETED: deletedIdsRef に積んで除去
+  //  - REACTION_*     : emoji 単位の集計を上書き（セット型なので自己 echo でも冪等）
+  // 書き込みは REST に投げるだけで、確定はすべて WS 受信に委ねる（楽観更新なし）。
+  // スレッド返信（replies / openThread）は今単位では mock 据え置き（後続単位で実 API 接続）。
   const [messages, setMessages] = useState<Message[]>([]);
   const deletedIdsRef = useRef<Set<string>>(new Set());
   const [threadParentId, setThreadParentId] = useState<string | null>(null);
@@ -82,31 +97,58 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyAsc]);
 
-  // リアルタイム受信。MESSAGE_CREATED 以外（編集/削除/リアクション）は今単位では無視する。
+  // リアルタイム受信。event.type で振り分けて messages へ反映する。
   useStompSubscription(`/topic/channels/${params.channelId}`, (frame) => {
     const event = parseWsEvent(frame.body);
     if (!event) return;
-    const created = messageCreatedToMessage(event);
-    if (created) mergeMessages([created]);
+    switch (event.type) {
+      case "MESSAGE_CREATED": {
+        const created = messageCreatedToMessage(event);
+        if (created) mergeMessages([created]);
+        break;
+      }
+      case "MESSAGE_EDITED":
+        setMessages((prev) => applyEdited(prev, event));
+        break;
+      case "MESSAGE_DELETED": {
+        const id = deletedMessageId(event);
+        if (id) {
+          deletedIdsRef.current.add(id);
+          setMessages((prev) => prev.filter((m) => m.id !== id));
+          if (threadParentId === id) setThreadParentId(null);
+        }
+        break;
+      }
+      case "REACTION_ADDED":
+      case "REACTION_REMOVED":
+        setMessages((prev) => applyReaction(prev, event));
+        break;
+    }
   });
 
   const send = (body: string) => {
     publishChannelMessage(params.channelId, body);
   };
 
+  // トップレベルメッセージの編集/削除/リアクションは REST に投げるだけ。state 反映は WS 受信で行う。
   const toggleReact = (id: string, emoji: string) => {
-    setMessages((prev) =>
-      prev.map((m) => (m.id === id ? toggleReaction(m, emoji) : m)),
-    );
-    setThreadReplies((prev) => mapValues(prev, (arr) => arr.map((m) => (m.id === id ? toggleReaction(m, emoji) : m))));
+    if (!meId) return;
+    const target = messages.find((m) => m.id === id);
+    const mine = target?.reactions.find((r) => r.emoji === emoji)?.userIds.includes(meId) ?? false;
+    void (mine ? removeReaction(id, emoji) : addReaction(id, emoji));
   };
 
   const edit = (id: string, body: string) => {
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === id ? { ...m, body, editedAt: new Date().toISOString() } : m,
-      ),
-    );
+    void editMessage(id, body);
+  };
+
+  const remove = (id: string) => {
+    void deleteMessage(id);
+  };
+
+  // スレッド返信は mock 据え置き（後続単位）。返信 id は実 API の数値 id ではないため REST に流さず、
+  // 従来どおりローカル state（threadReplies）を直接操作する。
+  const editReply = (id: string, body: string) => {
     setThreadReplies((prev) =>
       mapValues(prev, (arr) =>
         arr.map((m) => (m.id === id ? { ...m, body, editedAt: new Date().toISOString() } : m)),
@@ -114,10 +156,11 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
     );
   };
 
-  const remove = (id: string) => {
-    deletedIdsRef.current.add(id);
-    setMessages((prev) => prev.filter((m) => m.id !== id));
-    if (threadParentId === id) setThreadParentId(null);
+  const toggleReplyReaction = (id: string, emoji: string) => {
+    if (!meId) return;
+    setThreadReplies((prev) =>
+      mapValues(prev, (arr) => arr.map((m) => (m.id === id ? toggleReaction(m, emoji, meId) : m))),
+    );
   };
 
   const removeReply = (id: string) => {
@@ -220,9 +263,9 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
           onClose={closeThread}
           onReply={replyToThread}
           onReactParent={(emoji) => toggleReact(parent.id, emoji)}
-          onReactReply={(id, emoji) => toggleReact(id, emoji)}
+          onReactReply={(id, emoji) => toggleReplyReaction(id, emoji)}
           onEditParent={(b) => edit(parent.id, b)}
-          onEditReply={(id, b) => edit(id, b)}
+          onEditReply={(id, b) => editReply(id, b)}
           onDeleteParent={() => remove(parent.id)}
           onDeleteReply={(id) => removeReply(id)}
         />
@@ -231,15 +274,16 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
   );
 }
 
-function toggleReaction(m: Message, emoji: string): Message {
+// スレッド返信（mock）のローカル楽観トグル。トップレベルは REST 経由なのでこちらは使わない。
+function toggleReaction(m: Message, emoji: string, userId: string): Message {
   const existing = m.reactions.find((r) => r.emoji === emoji);
   if (!existing) {
-    return { ...m, reactions: [...m.reactions, { emoji, userIds: [currentUserId] }] };
+    return { ...m, reactions: [...m.reactions, { emoji, userIds: [userId] }] };
   }
-  const mine = existing.userIds.includes(currentUserId);
+  const mine = existing.userIds.includes(userId);
   const nextIds = mine
-    ? existing.userIds.filter((u) => u !== currentUserId)
-    : [...existing.userIds, currentUserId];
+    ? existing.userIds.filter((u) => u !== userId)
+    : [...existing.userIds, userId];
   const next = m.reactions
     .map((r) => (r.emoji === emoji ? { ...r, userIds: nextIds } : r))
     .filter((r) => r.userIds.length > 0);
