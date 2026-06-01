@@ -4,11 +4,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { notFound } from "next/navigation";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { listDmRooms } from "@/lib/api/dm";
-import { listDmMessages } from "@/lib/api/messages";
+import {
+  addReaction,
+  deleteMessage,
+  editMessage,
+  listDmMessages,
+  removeReaction,
+} from "@/lib/api/messages";
 import { queryKeys } from "@/lib/api/queryKeys";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useStompSubscription } from "@/lib/ws/useStompSubscription";
 import {
+  applyEdited,
+  applyReaction,
+  deletedMessageId,
   messageCreatedToMessage,
   parseWsEvent,
   publishDmMessage,
@@ -57,9 +66,11 @@ export default function DmPage({
     return [...data.pages.flatMap((p) => p.items)].reverse();
   }, [data]);
 
-  // トップレベルメッセージの送信は実 WS（/app/dm/{roomId}/messages）へ。受信は /topic/dm/{roomId}
-  // の MESSAGE_CREATED を id マージで合流（履歴ハイドレーションと同経路、自分の送信も echo で届く）。
-  // 編集/削除/リアクションは今単位では mock 据え置き（後続単位で実 API 接続）。
+  // トップレベルメッセージの送受信・編集・削除・リアクションはすべて実 API ＋ WS（/topic/dm/{roomId}）。
+  // 受信は WsEvent を type で振り分けて messages へ反映する（チャンネルページと同方針）:
+  //  - MESSAGE_CREATED: 未保有 id のみ追加（自分の送信も echo で届く）
+  //  - MESSAGE_EDITED / MESSAGE_DELETED / REACTION_* も WS 受信で state を更新
+  // 書き込みは REST に投げるだけで、確定はすべて WS 受信に委ねる（楽観更新なし）。
   const [messages, setMessages] = useState<Message[]>([]);
   const deletedIdsRef = useRef<Set<string>>(new Set());
 
@@ -81,49 +92,52 @@ export default function DmPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyAsc]);
 
-  // リアルタイム受信。MESSAGE_CREATED 以外は今単位では無視する。
+  // リアルタイム受信。event.type で振り分けて messages へ反映する。
   useStompSubscription(`/topic/dm/${params.dmId}`, (frame) => {
     const event = parseWsEvent(frame.body);
     if (!event) return;
-    const created = messageCreatedToMessage(event);
-    if (created) mergeMessages([created]);
+    switch (event.type) {
+      case "MESSAGE_CREATED": {
+        const created = messageCreatedToMessage(event);
+        if (created) mergeMessages([created]);
+        break;
+      }
+      case "MESSAGE_EDITED":
+        setMessages((prev) => applyEdited(prev, event));
+        break;
+      case "MESSAGE_DELETED": {
+        const id = deletedMessageId(event);
+        if (id) {
+          deletedIdsRef.current.add(id);
+          setMessages((prev) => prev.filter((m) => m.id !== id));
+        }
+        break;
+      }
+      case "REACTION_ADDED":
+      case "REACTION_REMOVED":
+        setMessages((prev) => applyReaction(prev, event));
+        break;
+    }
   });
 
   const send = (body: string) => {
     publishDmMessage(params.dmId, body);
   };
 
+  // 編集/削除/リアクションは REST に投げるだけ。state 反映は WS 受信で行う（楽観更新なし）。
   const toggleReact = (id: string, emoji: string) => {
     if (!meId) return;
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (m.id !== id) return m;
-        const existing = m.reactions.find((r) => r.emoji === emoji);
-        if (!existing) {
-          return { ...m, reactions: [...m.reactions, { emoji, userIds: [meId] }] };
-        }
-        const mine = existing.userIds.includes(meId);
-        const nextIds = mine
-          ? existing.userIds.filter((u) => u !== meId)
-          : [...existing.userIds, meId];
-        return {
-          ...m,
-          reactions: m.reactions
-            .map((r) => (r.emoji === emoji ? { ...r, userIds: nextIds } : r))
-            .filter((r) => r.userIds.length > 0),
-        };
-      }),
-    );
+    const target = messages.find((m) => m.id === id);
+    const mine = target?.reactions.find((r) => r.emoji === emoji)?.userIds.includes(meId) ?? false;
+    void (mine ? removeReaction(id, emoji) : addReaction(id, emoji));
   };
 
-  const edit = (id: string, body: string) =>
-    setMessages((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, body, editedAt: new Date().toISOString() } : m)),
-    );
+  const edit = (id: string, body: string) => {
+    void editMessage(id, body);
+  };
 
   const remove = (id: string) => {
-    deletedIdsRef.current.add(id);
-    setMessages((prev) => prev.filter((m) => m.id !== id));
+    void deleteMessage(id);
   };
 
   if (!room) {
