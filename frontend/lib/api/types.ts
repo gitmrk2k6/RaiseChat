@@ -128,6 +128,26 @@ export interface ReactionDto {
   userIds: number[];
 }
 
+/**
+ * GET /api/workspaces/{wsId}/search の結果要素（SearchResultItem）。
+ * 投稿者は authorId / authorUserId / authorDisplayName にフラット展開され、avatarColor は返らない。
+ * DM ヒットの場合 channelId / channelName は null（dmRoomId のみ）。
+ * レスポンス全体は { items, nextCursor, hasMore } で一覧系と同形なので Page<SearchResultItemDto> を使う。
+ */
+export interface SearchResultItemDto {
+  messageId: number;
+  channelId: number | null;
+  channelName: string | null;
+  dmRoomId: number | null;
+  parentMessageId: number | null;
+  authorId: number;
+  authorUserId: string;
+  authorDisplayName: string;
+  body: string;
+  editedAt: string | null;
+  createdAt: string;
+}
+
 /** PATCH /api/messages/{id} のリクエストボディ（EditMessageRequest）。 */
 export interface EditMessageRequest {
   body: string;

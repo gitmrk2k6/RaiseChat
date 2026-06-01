@@ -12,4 +12,6 @@ export const queryKeys = {
   dmRooms: (workspaceId: string) =>
     ["workspaces", workspaceId, "dmRooms"] as const,
   dmMessages: (dmRoomId: string) => ["dmRooms", dmRoomId, "messages"] as const,
+  search: (workspaceId: string, q: string) =>
+    ["workspaces", workspaceId, "search", q] as const,
 };
