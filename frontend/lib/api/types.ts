@@ -165,13 +165,21 @@ export interface UnreadResponseDto {
 }
 
 /**
- * WS /user/queue/notifications で配信される未読更新イベント（NotificationEvent）。
- * 各 scope の更新後「絶対値」を載せた自己完結イベント（差分ではない）。
- * type は UNREAD_UPDATED（未読あり）/ UNREAD_CLEARED（0 になった）。
+ * WS /user/queue/notifications で配信されるユーザー個別イベント（NotificationEvent）。
+ *
+ * - 未読系（UNREAD_UPDATED / UNREAD_CLEARED）: 各 scope の更新後「絶対値」を載せた自己完結イベント。
+ *   scopeType は "channel" | "dm"。NotificationContext が数を上書きする。
+ * - 剥奪系（WORKSPACE_REMOVED / CHANNEL_REMOVED, F-16）: 対象 WS / チャンネルから外れた通知。
+ *   scopeType は "workspace" | "channel"、unreadCount / mentionCount は 0。MembershipListener が
+ *   キャッシュ無効化・リダイレクトに用いる。
  */
 export interface NotificationEventDto {
-  type: "UNREAD_UPDATED" | "UNREAD_CLEARED";
-  scopeType: "channel" | "dm";
+  type:
+    | "UNREAD_UPDATED"
+    | "UNREAD_CLEARED"
+    | "WORKSPACE_REMOVED"
+    | "CHANNEL_REMOVED";
+  scopeType: "channel" | "dm" | "workspace";
   scopeId: number;
   unreadCount: number;
   mentionCount: number;
