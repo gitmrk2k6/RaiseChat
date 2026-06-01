@@ -40,8 +40,11 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
   const channelUnread = getChannelUnread(params.channelId).unread;
 
   // 検索ジャンプ対象（?msg=<id>）。該当が履歴の奥にある場合は読み込まれるまで古い方向へ自動ページングする。
+  // 返信ヒットでは追加で ?reply=<返信id> が付く（?msg は親id）。親が読み込まれたらスレッドを開いて
+  // 該当返信までスクロールする。
   const searchParams = useSearchParams();
   const jumpMessageId = searchParams.get("msg");
+  const jumpReplyId = searchParams.get("reply");
 
   // このチャンネルを開いている間は既読を維持する。
   //  - 開いた時、および表示中に未読が増えるたびに最新まで既読化（POST /api/channels/{id}/read, body 無し＝最新）
@@ -131,6 +134,18 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
     jumpAttemptsRef.current += 1;
     void fetchNextPage();
   }, [jumpMessageId, messages, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // 返信ヒットのジャンプ: 親（?msg）が messages に載ったら一度だけスレッドを自動オープンする。
+  // 実際の返信へのスクロール＋ハイライトは ThreadPanel（highlightReplyId）に委ねる。
+  // 一度開いたらユーザーが閉じても再オープンしないよう、処理済み id を ref で記録する。
+  const handledReplyJumpRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!jumpReplyId || !jumpMessageId) return;
+    if (handledReplyJumpRef.current === jumpReplyId) return;
+    if (!messages.some((m) => m.id === jumpMessageId)) return; // 親がまだ未ロード
+    handledReplyJumpRef.current = jumpReplyId;
+    setThreadParentId(jumpMessageId);
+  }, [jumpReplyId, jumpMessageId, messages]);
 
   // リアルタイム受信。event.type で振り分けて messages へ反映する。
   useStompSubscription(`/topic/channels/${params.channelId}`, (frame) => {
@@ -317,6 +332,7 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
         <ThreadPanel
           parent={parent}
           replies={replies}
+          highlightReplyId={jumpReplyId}
           onClose={closeThread}
           onReply={replyToThread}
           onReactParent={(emoji) => toggleReact(parent.id, emoji)}
