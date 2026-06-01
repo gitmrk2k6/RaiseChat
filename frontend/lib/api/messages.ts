@@ -13,6 +13,7 @@ import type {
   MessageDto,
   Page,
   ReactionDto,
+  ReplyMessageRequest,
 } from "./types";
 import type { Attachment, Message } from "@/types";
 
@@ -152,4 +153,38 @@ export async function listDmMessages(
     nextCursor: page.nextCursor,
     hasMore: page.hasMore,
   };
+}
+
+/**
+ * GET /api/messages/{parentId}/replies スレッド返信の履歴（F-08）。
+ * チャンネル/DM 履歴と違い id 昇順（古→新）・前方ページングなので、表示用に reverse しない。
+ * nextCursor は不透明文字列としてそのまま次リクエストの cursor に渡す。
+ */
+export async function listReplies(
+  parentId: string,
+  cursor?: string | null,
+  limit?: number,
+): Promise<Page<Message>> {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  if (limit != null) params.set("limit", String(limit));
+  const qs = params.toString();
+  const page = await api.get<Page<MessageDto>>(
+    `/api/messages/${Number(parentId)}/replies${qs ? `?${qs}` : ""}`,
+  );
+  return {
+    items: page.items.map(toMessage),
+    nextCursor: page.nextCursor,
+    hasMore: page.hasMore,
+  };
+}
+
+/**
+ * POST /api/messages/{parentId}/replies スレッドへ返信を投稿（F-08）。
+ * 返信投稿は REST のみ（WS publish 経路は無い）。確定は /topic/threads/{rootId} の
+ * MESSAGE_CREATED 受信に委ねるため、レスポンスの Message は使わない（楽観更新なし）。
+ */
+export async function createReply(parentId: string, body: string): Promise<void> {
+  const req: ReplyMessageRequest = { body };
+  await api.post<MessageDto>(`/api/messages/${Number(parentId)}/replies`, req);
 }
