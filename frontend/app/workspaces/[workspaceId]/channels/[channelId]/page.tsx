@@ -4,14 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { notFound } from "next/navigation";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { getChannel as getMockChannel } from "@/lib/mock/channels";
-import { getThreadReplies } from "@/lib/mock/messages";
-import { currentUserId } from "@/lib/mock/users";
 import { getChannel as fetchChannel } from "@/lib/api/channels";
 import {
   addReaction,
+  createReply,
   deleteMessage,
   editMessage,
   listChannelMessages,
+  listReplies,
   removeReaction,
 } from "@/lib/api/messages";
 import { queryKeys } from "@/lib/api/queryKeys";
@@ -73,11 +73,17 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
   //  - MESSAGE_DELETED: deletedIdsRef に積んで除去
   //  - REACTION_*     : emoji 単位の集計を上書き（セット型なので自己 echo でも冪等）
   // 書き込みは REST に投げるだけで、確定はすべて WS 受信に委ねる（楽観更新なし）。
-  // スレッド返信（replies / openThread）は今単位では mock 据え置き（後続単位で実 API 接続）。
   const [messages, setMessages] = useState<Message[]>([]);
   const deletedIdsRef = useRef<Set<string>>(new Set());
+
+  // スレッド返信も実 API ＋ WS。開いている 1 スレッドぶんだけを単一配列で持つ（閉じたら破棄）。
+  //  - 履歴: GET /api/messages/{parentId}/replies（id 昇順）で開いたときに初期ロード
+  //  - 受信: /topic/threads/{parentId} を開いている間だけ購読し、トップレベルと同じ純関数で反映
+  //  - 投稿/編集/削除/リアクション: REST に投げるだけ。確定はすべて thread WS 受信で
+  // 親(root)自身の編集/リアクション/削除は channel トピック → 既存 messages 経路で parent に反映される。
   const [threadParentId, setThreadParentId] = useState<string | null>(null);
-  const [threadReplies, setThreadReplies] = useState<Record<string, Message[]>>({});
+  const [replies, setReplies] = useState<Message[]>([]);
+  const deletedReplyIdsRef = useRef<Set<string>>(new Set());
 
   // 履歴・WS 受信の双方を同じ id マージで取り込む共通インサータ。
   const mergeMessages = (incoming: Message[]) => {
@@ -126,6 +132,84 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
     }
   });
 
+  // 返信の履歴・WS 受信を同じ id マージで取り込む（昇順なので末尾に足して createdAt 昇順で整える）。
+  const mergeReplies = (incoming: Message[]) => {
+    setReplies((prev) => {
+      const existing = new Set(prev.map((r) => r.id));
+      const additions = incoming.filter(
+        (r) => !existing.has(r.id) && !deletedReplyIdsRef.current.has(r.id),
+      );
+      if (additions.length === 0) return prev;
+      return [...prev, ...additions].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    });
+  };
+
+  // スレッドを開いたら返信履歴を初期ロードする。閉じたら（threadParentId=null）replies を破棄。
+  useEffect(() => {
+    if (!threadParentId) {
+      setReplies([]);
+      return;
+    }
+    deletedReplyIdsRef.current = new Set();
+    setReplies([]);
+    let cancelled = false;
+    void listReplies(threadParentId)
+      .then((page) => {
+        if (!cancelled) mergeReplies(page.items);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadParentId]);
+
+  // スレッドを開いている間だけ /topic/threads/{rootId} を購読し、返信配列へ反映する。
+  // 返信は CREATED/EDITED/DELETED/REACTION_* がすべてこのトピックに流れる（backend 仕様）。
+  useStompSubscription(threadParentId ? `/topic/threads/${threadParentId}` : null, (frame) => {
+    const event = parseWsEvent(frame.body);
+    if (!event) return;
+    switch (event.type) {
+      case "MESSAGE_CREATED": {
+        const created = messageCreatedToMessage(event);
+        if (created) mergeReplies([created]);
+        break;
+      }
+      case "MESSAGE_EDITED":
+        setReplies((prev) => applyEdited(prev, event));
+        break;
+      case "MESSAGE_DELETED": {
+        const id = deletedMessageId(event);
+        if (id) {
+          deletedReplyIdsRef.current.add(id);
+          setReplies((prev) => prev.filter((r) => r.id !== id));
+        }
+        break;
+      }
+      case "REACTION_ADDED":
+      case "REACTION_REMOVED":
+        setReplies((prev) => applyReaction(prev, event));
+        break;
+    }
+  });
+
+  // 親の返信件数バッジ（threadReplyCount / participantIds）は API 非返却なので、
+  // 開いているスレッドの loaded replies から best-effort で導出する（WS で増減に追従）。
+  useEffect(() => {
+    if (!threadParentId) return;
+    const count = replies.length;
+    const participants = Array.from(new Set(replies.map((r) => r.authorId)));
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === threadParentId &&
+        (m.threadReplyCount !== count ||
+          m.threadParticipantIds.length !== participants.length)
+          ? { ...m, threadReplyCount: count, threadParticipantIds: participants }
+          : m,
+      ),
+    );
+  }, [replies, threadParentId]);
+
   const send = (body: string) => {
     publishChannelMessage(params.channelId, body);
   };
@@ -146,79 +230,22 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
     void deleteMessage(id);
   };
 
-  // スレッド返信は mock 据え置き（後続単位）。返信 id は実 API の数値 id ではないため REST に流さず、
-  // 従来どおりローカル state（threadReplies）を直接操作する。
-  const editReply = (id: string, body: string) => {
-    setThreadReplies((prev) =>
-      mapValues(prev, (arr) =>
-        arr.map((m) => (m.id === id ? { ...m, body, editedAt: new Date().toISOString() } : m)),
-      ),
-    );
-  };
-
+  // 返信のリアクションは replies 配列で自分判定し、REST に投げるだけ（編集/削除は top-level と同じ関数を再利用）。
   const toggleReplyReaction = (id: string, emoji: string) => {
     if (!meId) return;
-    setThreadReplies((prev) =>
-      mapValues(prev, (arr) => arr.map((m) => (m.id === id ? toggleReaction(m, emoji, meId) : m))),
-    );
+    const target = replies.find((r) => r.id === id);
+    const mine = target?.reactions.find((r) => r.emoji === emoji)?.userIds.includes(meId) ?? false;
+    void (mine ? removeReaction(id, emoji) : addReaction(id, emoji));
   };
 
-  const removeReply = (id: string) => {
-    if (!threadParentId) return;
-    setThreadReplies((prev) => ({
-      ...prev,
-      [threadParentId]: (prev[threadParentId] ?? []).filter((m) => m.id !== id),
-    }));
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === threadParentId
-          ? { ...m, threadReplyCount: Math.max(0, m.threadReplyCount - 1) }
-          : m,
-      ),
-    );
-  };
-
-  const openThread = (id: string) => {
-    setThreadParentId(id);
-    if (!threadReplies[id]) {
-      setThreadReplies((prev) => ({ ...prev, [id]: getThreadReplies(id) }));
-    }
-  };
+  const openThread = (id: string) => setThreadParentId(id);
 
   const closeThread = () => setThreadParentId(null);
 
+  // 返信投稿は REST POST のみ（WS publish 経路は無い）。確定は thread WS の MESSAGE_CREATED 受信で。
   const replyToThread = (body: string) => {
     if (!threadParentId) return;
-    const r: Message = {
-      id: `r-local-${Date.now()}`,
-      channelId: params.channelId,
-      parentId: threadParentId,
-      authorId: currentUserId,
-      body,
-      createdAt: new Date().toISOString(),
-      reactions: [],
-      attachments: [],
-      mentionIds: extractMentions(body),
-      threadReplyCount: 0,
-      threadParticipantIds: [],
-    };
-    setThreadReplies((prev) => ({
-      ...prev,
-      [threadParentId]: [...(prev[threadParentId] ?? []), r],
-    }));
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === threadParentId
-          ? {
-              ...m,
-              threadReplyCount: m.threadReplyCount + 1,
-              threadParticipantIds: Array.from(
-                new Set([...m.threadParticipantIds, currentUserId]),
-              ),
-            }
-          : m,
-      ),
-    );
+    void createReply(threadParentId, body);
   };
 
   const parent = threadParentId ? messages.find((m) => m.id === threadParentId) : null;
@@ -259,42 +286,17 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
       {parent && (
         <ThreadPanel
           parent={parent}
-          replies={threadReplies[parent.id] ?? []}
+          replies={replies}
           onClose={closeThread}
           onReply={replyToThread}
           onReactParent={(emoji) => toggleReact(parent.id, emoji)}
           onReactReply={(id, emoji) => toggleReplyReaction(id, emoji)}
           onEditParent={(b) => edit(parent.id, b)}
-          onEditReply={(id, b) => editReply(id, b)}
+          onEditReply={(id, b) => edit(id, b)}
           onDeleteParent={() => remove(parent.id)}
-          onDeleteReply={(id) => removeReply(id)}
+          onDeleteReply={(id) => remove(id)}
         />
       )}
     </>
   );
-}
-
-// スレッド返信（mock）のローカル楽観トグル。トップレベルは REST 経由なのでこちらは使わない。
-function toggleReaction(m: Message, emoji: string, userId: string): Message {
-  const existing = m.reactions.find((r) => r.emoji === emoji);
-  if (!existing) {
-    return { ...m, reactions: [...m.reactions, { emoji, userIds: [userId] }] };
-  }
-  const mine = existing.userIds.includes(userId);
-  const nextIds = mine
-    ? existing.userIds.filter((u) => u !== userId)
-    : [...existing.userIds, userId];
-  const next = m.reactions
-    .map((r) => (r.emoji === emoji ? { ...r, userIds: nextIds } : r))
-    .filter((r) => r.userIds.length > 0);
-  return { ...m, reactions: next };
-}
-
-function extractMentions(body: string): string[] {
-  const matches = body.match(/@(\w+)/g) ?? [];
-  return matches.map((s) => s.slice(1));
-}
-
-function mapValues<T, U>(o: Record<string, T>, f: (v: T) => U): Record<string, U> {
-  return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, f(v)]));
 }

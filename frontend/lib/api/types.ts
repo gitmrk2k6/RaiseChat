@@ -132,3 +132,8 @@ export interface ReactionDto {
 export interface EditMessageRequest {
   body: string;
 }
+
+/** POST /api/messages/{parentId}/replies のリクエストボディ（ReplyMessageRequest）。 */
+export interface ReplyMessageRequest {
+  body: string;
+}
