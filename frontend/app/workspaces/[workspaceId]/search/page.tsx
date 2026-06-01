@@ -152,10 +152,12 @@ function SearchHitCard({
   dmPartnerName?: string;
   q: string;
 }) {
+  // v1 はトップレベルへのジャンプのみ。返信ヒット（parentId あり）は親メッセージへ寄せる。
+  const targetId = hit.parentId ?? hit.messageId;
   const href = hit.channelId
-    ? `/workspaces/${workspaceId}/channels/${hit.channelId}`
+    ? `/workspaces/${workspaceId}/channels/${hit.channelId}?msg=${targetId}`
     : hit.dmRoomId
-      ? `/workspaces/${workspaceId}/dm/${hit.dmRoomId}`
+      ? `/workspaces/${workspaceId}/dm/${hit.dmRoomId}?msg=${targetId}`
       : "#";
 
   return (

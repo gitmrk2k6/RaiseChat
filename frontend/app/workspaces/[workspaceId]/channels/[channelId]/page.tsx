@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { notFound } from "next/navigation";
+import { notFound, useSearchParams } from "next/navigation";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { getChannel as getMockChannel } from "@/lib/mock/channels";
 import { getChannel as fetchChannel } from "@/lib/api/channels";
@@ -38,6 +38,10 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
   const meId = user ? String(user.id) : null;
   const { getChannelUnread } = useUnread();
   const channelUnread = getChannelUnread(params.channelId).unread;
+
+  // 検索ジャンプ対象（?msg=<id>）。該当が履歴の奥にある場合は読み込まれるまで古い方向へ自動ページングする。
+  const searchParams = useSearchParams();
+  const jumpMessageId = searchParams.get("msg");
 
   // このチャンネルを開いている間は既読を維持する。
   //  - 開いた時、および表示中に未読が増えるたびに最新まで既読化（POST /api/channels/{id}/read, body 無し＝最新）
@@ -115,6 +119,18 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
     mergeMessages(historyAsc);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyAsc]);
+
+  // 検索ジャンプ: 対象 id がまだ読み込まれていなければ、見つかるまで古い履歴を自動ロードする。
+  // 暴走防止に上限を設ける（課題規模では十分。超えたら諦めてスクロールしない）。
+  const jumpAttemptsRef = useRef(0);
+  useEffect(() => {
+    if (!jumpMessageId) return;
+    if (messages.some((m) => m.id === jumpMessageId)) return; // 既に表示可能
+    if (!hasNextPage || isFetchingNextPage) return;
+    if (jumpAttemptsRef.current >= 10) return;
+    jumpAttemptsRef.current += 1;
+    void fetchNextPage();
+  }, [jumpMessageId, messages, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // リアルタイム受信。event.type で振り分けて messages へ反映する。
   useStompSubscription(`/topic/channels/${params.channelId}`, (frame) => {
@@ -292,6 +308,7 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
             onLoadOlder={() => fetchNextPage()}
             hasMore={hasNextPage}
             loadingOlder={isFetchingNextPage}
+            highlightMessageId={jumpMessageId}
           />
         )}
         <MessageInput placeholder={`#${channel.name} へのメッセージ`} onSend={send} />

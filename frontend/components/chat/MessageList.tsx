@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useLayoutEffect, useRef } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Message } from "@/types";
 import { MessageItem } from "./MessageItem";
 import { dayKey, formatDayLabel } from "@/lib/utils";
@@ -17,6 +17,8 @@ interface Props {
   hasMore?: boolean;
   /** 古い履歴の読込中フラグ。 */
   loadingOlder?: boolean;
+  /** 検索ジャンプ対象のメッセージ id。読み込み済みになったらその位置へスクロールして一時ハイライトする。 */
+  highlightMessageId?: string | null;
 }
 
 export function MessageList({
@@ -28,9 +30,13 @@ export function MessageList({
   onLoadOlder,
   hasMore,
   loadingOlder,
+  highlightMessageId,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const didInitRef = useRef(false);
+  // 検索ジャンプ: 対象が読み込まれたら一度だけスクロール＋フラッシュする。
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const handledHighlightRef = useRef<string | null>(null);
   // 古い履歴を prepend する直前の scrollHeight。prepend 後に位置を復元するためのアンカー。
   const anchorHeightRef = useRef<number | null>(null);
   const lastIdRef = useRef<string | null>(null);
@@ -52,7 +58,11 @@ export function MessageList({
     const lastId = messages[messages.length - 1]?.id ?? null;
 
     if (!didInitRef.current && messages.length > 0) {
-      el.scrollTop = el.scrollHeight;
+      // 検索ジャンプ中（対象が未表示）は最下部へ飛ばさず、後段の scrollIntoView に委ねる。
+      const jumping =
+        highlightMessageId != null &&
+        handledHighlightRef.current !== highlightMessageId;
+      if (!jumping) el.scrollTop = el.scrollHeight;
       didInitRef.current = true;
       lastIdRef.current = lastId;
       return;
@@ -62,7 +72,26 @@ export function MessageList({
       el.scrollTop = el.scrollHeight;
       lastIdRef.current = lastId;
     }
+    // highlightMessageId は初回スクロール抑止の判定にのみ使い、変化での再実行は不要。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages]);
+
+  // 検索ジャンプ: 対象 id が messages に現れたら、その要素へスクロールして約2秒ハイライト。
+  // 自動ページングで遅れて現れるケースに備え、messages の変化を依存に含める。
+  useEffect(() => {
+    if (!highlightMessageId) return;
+    if (handledHighlightRef.current === highlightMessageId) return;
+    if (!messages.some((m) => m.id === highlightMessageId)) return; // まだ未ロード
+    const el = containerRef.current?.querySelector(
+      `[data-message-id="${highlightMessageId}"]`,
+    ) as HTMLElement | null;
+    if (!el) return;
+    handledHighlightRef.current = highlightMessageId;
+    el.scrollIntoView({ block: "center" });
+    setFlashId(highlightMessageId);
+    const t = setTimeout(() => setFlashId(null), 2000);
+    return () => clearTimeout(t);
+  }, [highlightMessageId, messages]);
 
   const handleScroll = () => {
     const el = containerRef.current;
@@ -119,6 +148,7 @@ export function MessageList({
               onDelete={() => onDelete(m.id)}
               onOpenThread={onOpenThread ? () => onOpenThread(m.id) : undefined}
               compact={compact}
+              highlighted={m.id === flashId}
             />
           </Fragment>
         );
