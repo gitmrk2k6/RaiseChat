@@ -2,7 +2,8 @@
 // DTO（id は数値 BIGINT、members は User サブセット）をフロントの DmRoom へ変換する。
 // API が返さない表示専用フィールドはプレースホルダ補完する（統合2 と同方針）:
 //  - lastMessagePreview → undefined（一覧 API に含まれない）
-//  - unreadCount        → 0        （未読は F-14 で別接続）
+//  - unreadCount        → 0        （型を満たすための既定値。実値は描画時に
+//    NotificationProvider(useUnread) が scope 単位で上書きする。F-14 接続済み）
 //  - members[].avatarColor → member.id から決定論的に導出（messages の avatarColorFor を共用）
 
 import { api } from "./client";

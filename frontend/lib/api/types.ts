@@ -148,6 +148,35 @@ export interface SearchResultItemDto {
   createdAt: string;
 }
 
+/**
+ * GET /api/notifications/unread の結果要素（UnreadItem）。1 スコープ分の未読数（F-14）。
+ * scopeType は "channel" | "dm"、mentionCount は unreadCount の内数。未読 0 のスコープは返らない。
+ */
+export interface UnreadItemDto {
+  scopeType: "channel" | "dm";
+  scopeId: number;
+  unreadCount: number;
+  mentionCount: number;
+}
+
+/** GET /api/notifications/unread のレスポンス（UnreadResponse）。 */
+export interface UnreadResponseDto {
+  items: UnreadItemDto[];
+}
+
+/**
+ * WS /user/queue/notifications で配信される未読更新イベント（NotificationEvent）。
+ * 各 scope の更新後「絶対値」を載せた自己完結イベント（差分ではない）。
+ * type は UNREAD_UPDATED（未読あり）/ UNREAD_CLEARED（0 になった）。
+ */
+export interface NotificationEventDto {
+  type: "UNREAD_UPDATED" | "UNREAD_CLEARED";
+  scopeType: "channel" | "dm";
+  scopeId: number;
+  unreadCount: number;
+  mentionCount: number;
+}
+
 /** PATCH /api/messages/{id} のリクエストボディ（EditMessageRequest）。 */
 export interface EditMessageRequest {
   body: string;
