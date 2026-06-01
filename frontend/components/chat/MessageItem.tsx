@@ -17,6 +17,7 @@ interface Props {
   onDelete: () => void;
   onOpenThread?: () => void;
   compact?: boolean; // 連続発言の2件目以降はアバター省略
+  highlighted?: boolean; // 検索ジャンプ時の一時ハイライト
 }
 
 const QUICK_EMOJIS = ["👍", "❤️", "😄", "🎉", "🙏", "👀"];
@@ -28,6 +29,7 @@ export function MessageItem({
   onDelete,
   onOpenThread,
   compact,
+  highlighted,
 }: Props) {
   // 実 API メッセージは message.author（displayName / 派生 avatarColor）を優先。
   // mock メッセージは author 未設定なので getUser(authorId) にフォールバックする。
@@ -53,7 +55,10 @@ export function MessageItem({
 
   return (
     <div
-      className="group relative px-5 py-1 hover:bg-gray-50"
+      data-message-id={message.id}
+      className={`group relative px-5 py-1 hover:bg-gray-50 transition-colors duration-700 ${
+        highlighted ? "bg-yellow-100" : ""
+      }`}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => {
         setHover(false);

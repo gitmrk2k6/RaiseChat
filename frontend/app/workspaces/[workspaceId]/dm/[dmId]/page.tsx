@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { notFound } from "next/navigation";
+import { notFound, useSearchParams } from "next/navigation";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { listDmRooms } from "@/lib/api/dm";
 import {
@@ -38,6 +38,10 @@ export default function DmPage({
   const meId = user ? String(user.id) : null;
   const { getDmUnread } = useUnread();
   const dmUnread = getDmUnread(params.dmId).unread;
+
+  // 検索ジャンプ対象（?msg=<id>）。該当が履歴の奥にある場合は読み込まれるまで古い方向へ自動ページングする。
+  const searchParams = useSearchParams();
+  const jumpMessageId = searchParams.get("msg");
 
   // この DM を開いている間は既読を維持する（チャンネルと同方針）。
   //  - 開いた時、および表示中に未読が増えるたびに最新まで既読化（POST /api/dm/rooms/{id}/read, body 無し＝最新）
@@ -103,6 +107,17 @@ export default function DmPage({
     mergeMessages(historyAsc);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyAsc]);
+
+  // 検索ジャンプ: 対象 id がまだ読み込まれていなければ、見つかるまで古い履歴を自動ロードする（上限ガードあり）。
+  const jumpAttemptsRef = useRef(0);
+  useEffect(() => {
+    if (!jumpMessageId) return;
+    if (messages.some((m) => m.id === jumpMessageId)) return; // 既に表示可能
+    if (!hasNextPage || isFetchingNextPage) return;
+    if (jumpAttemptsRef.current >= 10) return;
+    jumpAttemptsRef.current += 1;
+    void fetchNextPage();
+  }, [jumpMessageId, messages, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // リアルタイム受信。event.type で振り分けて messages へ反映する。
   useStompSubscription(`/topic/dm/${params.dmId}`, (frame) => {
@@ -190,6 +205,7 @@ export default function DmPage({
           onLoadOlder={() => fetchNextPage()}
           hasMore={hasNextPage}
           loadingOlder={isFetchingNextPage}
+          highlightMessageId={jumpMessageId}
         />
       )}
       <MessageInput placeholder={`${partnerName} へのメッセージ`} onSend={send} />
