@@ -5,7 +5,9 @@ import com.raisechat.channel.ChannelMember;
 import com.raisechat.channel.ChannelMemberRepository;
 import com.raisechat.channel.ChannelRepository;
 import com.raisechat.channel.ChannelType;
+import com.raisechat.notification.NotificationPublisher;
 import com.raisechat.notification.UnreadCounterStore;
+import com.raisechat.notification.dto.NotificationEvent;
 import com.raisechat.user.User;
 import com.raisechat.user.UserRepository;
 import com.raisechat.workspace.dto.CreateInviteRequest;
@@ -47,6 +49,7 @@ public class WorkspaceService {
     private final UserRepository userRepository;
     private final InviteTokenService inviteTokenService;
     private final UnreadCounterStore unreadCounterStore;
+    private final NotificationPublisher notificationPublisher;
 
     // 招待 URL の組み立てに使うフロントエンドのベース URL。
     @Value("${app.invite.base-url:http://localhost:3000/invite}")
@@ -64,7 +67,8 @@ public class WorkspaceService {
             ChannelMemberRepository channelMemberRepository,
             UserRepository userRepository,
             InviteTokenService inviteTokenService,
-            UnreadCounterStore unreadCounterStore
+            UnreadCounterStore unreadCounterStore,
+            NotificationPublisher notificationPublisher
     ) {
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -74,6 +78,7 @@ public class WorkspaceService {
         this.userRepository = userRepository;
         this.inviteTokenService = inviteTokenService;
         this.unreadCounterStore = unreadCounterStore;
+        this.notificationPublisher = notificationPublisher;
     }
 
     @Transactional
@@ -246,6 +251,11 @@ public class WorkspaceService {
             cm.setLeftAt(now);
             unreadCounterStore.clear(targetUserId, UnreadCounterStore.channelField(cm.getChannel().getId()));
         }
+
+        // 対象ユーザーの画面から当該 WS を即座に消すため WS 通知を発行（本人宛キューのみ）。
+        // 既存の未読配信と同じくトランザクション内で publish する（ロールバック時は幽霊通知になりうるが、
+        // 未読ファンアウトと同等の割り切り）。
+        notificationPublisher.publish(targetUserId, NotificationEvent.workspaceRemoved(workspaceId));
     }
 
     // ワークスペースを論理削除する。OWNER のみ。
@@ -272,9 +282,10 @@ public class WorkspaceService {
             unreadCounterStore.clear(cm.getUser().getId(), UnreadCounterStore.channelField(cm.getChannel().getId()));
         }
 
-        // 全ワークスペースメンバーを論理退出させる。
+        // 全ワークスペースメンバーを論理退出させ、各自の画面から当該 WS を消すため WS 通知を発行する。
         for (WorkspaceMember member : workspaceMemberRepository.findActiveByWorkspaceIdWithUser(workspaceId)) {
             member.setLeftAt(now);
+            notificationPublisher.publish(member.getUser().getId(), NotificationEvent.workspaceRemoved(workspaceId));
         }
     }
 

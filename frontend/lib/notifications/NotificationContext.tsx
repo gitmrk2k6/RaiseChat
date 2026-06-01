@@ -74,6 +74,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     } catch {
       return;
     }
+    // 同じキューに membership 剥奪イベント（WORKSPACE_REMOVED / CHANNEL_REMOVED）も流れてくる。
+    // ここは未読の真実源なので未読系だけを処理し、剥奪系は MembershipListener に委ねる。
+    if (event.type !== "UNREAD_UPDATED" && event.type !== "UNREAD_CLEARED") {
+      return;
+    }
     const key = event.scopeType === "dm" ? dmKey(event.scopeId) : channelKey(event.scopeId);
     setCounts((prev) => ({
       ...prev,

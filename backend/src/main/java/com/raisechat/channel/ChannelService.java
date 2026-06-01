@@ -7,6 +7,9 @@ import com.raisechat.channel.dto.CreateChannelRequest;
 import com.raisechat.channel.exception.ChannelConflictException;
 import com.raisechat.channel.exception.ChannelForbiddenException;
 import com.raisechat.channel.exception.ChannelNotFoundException;
+import com.raisechat.notification.NotificationPublisher;
+import com.raisechat.notification.UnreadCounterStore;
+import com.raisechat.notification.dto.NotificationEvent;
 import com.raisechat.user.User;
 import com.raisechat.user.UserRepository;
 import com.raisechat.workspace.InviteTokenService;
@@ -46,6 +49,8 @@ public class ChannelService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
     private final InviteTokenService inviteTokenService;
+    private final UnreadCounterStore unreadCounterStore;
+    private final NotificationPublisher notificationPublisher;
 
     // 招待 URL の組み立てに使うフロントエンドのベース URL（ワークスペース招待とは別経路）。
     @Value("${app.channel-invite.base-url:http://localhost:3000/channel-invite}")
@@ -61,7 +66,9 @@ public class ChannelService {
             WorkspaceRepository workspaceRepository,
             WorkspaceMemberRepository workspaceMemberRepository,
             UserRepository userRepository,
-            InviteTokenService inviteTokenService
+            InviteTokenService inviteTokenService,
+            UnreadCounterStore unreadCounterStore,
+            NotificationPublisher notificationPublisher
     ) {
         this.channelRepository = channelRepository;
         this.channelMemberRepository = channelMemberRepository;
@@ -70,6 +77,8 @@ public class ChannelService {
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.userRepository = userRepository;
         this.inviteTokenService = inviteTokenService;
+        this.unreadCounterStore = unreadCounterStore;
+        this.notificationPublisher = notificationPublisher;
     }
 
     @Transactional
@@ -208,7 +217,18 @@ public class ChannelService {
             throw new ChannelConflictException("general チャンネルは削除できません");
         }
 
+        // 削除確定の前にアクティブメンバーを確定させる（left_at で絞るため deleted_at の影響は受けない）。
+        List<Long> memberIds = channelMemberRepository.findActiveUserIdsByChannelId(channelId);
+
         channel.setDeletedAt(OffsetDateTime.now());
+
+        // 各メンバーの未読バッジを消し、画面から当該チャンネルを即座に消すため通知を発行する。
+        // WS キック / WS 削除と同じ後始末で幽霊バッジを残さない。
+        String field = UnreadCounterStore.channelField(channelId);
+        for (Long memberId : memberIds) {
+            unreadCounterStore.clear(memberId, field);
+            notificationPublisher.publish(memberId, NotificationEvent.channelRemoved(channelId));
+        }
     }
 
     // ---------- 招待 (F-15: チャンネル招待) ----------
