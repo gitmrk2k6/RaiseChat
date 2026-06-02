@@ -167,9 +167,10 @@ RaiseChat で **実際に採用している技術とそのバージョン** を 
 | 項目 | 状態 |
 | --- | --- |
 | ホスティング | ✅ AWS（[infrastructure.md](infrastructure.md)）|
+| IaC | ✅ Terraform（[`infra/terraform/`](../infra/terraform/README.md)。state は S3 + DynamoDB / bootstrap で管理）|
 | 冗長化構成（バックエンド複数台）| ✅ ECS Fargate 複数タスク + Redis Pub-Sub（[infrastructure.md §6](infrastructure.md) / [realtime-design.md](realtime-design.md)）|
 | 自動デプロイ / CI/CD | ✅ GitHub Actions → ECR → ECS（方針確定。[infrastructure.md §7](infrastructure.md)）|
-| 構成管理（Ansible 等）| ✅ 適用範囲を確定（[infrastructure.md §8](infrastructure.md)）|
+| 構成管理（Ansible 等）| ✅ Fargate＋運用 EC2(bastion) を Ansible 題材に（[infrastructure.md §8](infrastructure.md)）|
 
 ---
 

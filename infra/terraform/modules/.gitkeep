@@ -1,0 +1,2 @@
+# 再利用可能な Terraform モジュールの置き場。
+# ⑤ロードマップの各ステップで network / data / ecs / frontend などを追加する。
