@@ -1,0 +1,7 @@
+# ビルドコンテキストから除外して送信サイズと再現性を担保する。
+build/
+.gradle/
+*.log
+HELP.md
+.idea/
+.vscode/

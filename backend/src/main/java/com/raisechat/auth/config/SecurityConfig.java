@@ -46,6 +46,8 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login", "/api/auth/refresh").permitAll()
+                        // ALB のターゲットヘルスチェック先（infrastructure.md §9）。認証不要で 200 を返す。
+                        .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         // SockJS HTTP ネゴシエーション（/ws/info 等）は Authorization ヘッダなし。
                         // 実認証は STOMP CONNECT フレームの JwtChannelInterceptor で行う。
                         .requestMatchers("/ws/**").permitAll()
