@@ -298,9 +298,18 @@ ECS Fargate は OS 層をユーザーが管理しないため、従来型の「�
 
 実装フェーズ（[要件定義書 §10](requirements.md) フェーズ⑤）で確定する。
 
-- **ECS 起動タイプ**: Fargate（運用が楽）か EC2 起動型（Ansible 題材を確保しやすい）か。学習目的とのバランスで決定（§8.2）。
-- **フロントの配信方式**: CloudFront + S3（静的書き出し）か、ECS で Next.js を SSR ホストするか。App Router の SSR 利用範囲に依存。
-- **IaC ツール**: CloudFormation / Terraform / CDK のいずれを採るか。Ansible との役割分担を含めて確定。
+### 12.1 確定済み（フェーズ⑤着手時に合意）
+
+| 項目 | 決定 | 補足 |
+| --- | --- | --- |
+| IaC ツール | **Terraform** | コードは [`infra/terraform/`](../infra/terraform/README.md)。CloudFormation/CDK は不採用 |
+| ECS 起動タイプ | **Fargate**（アプリ層）＋ **運用 EC2(bastion)** | bastion を Ansible のプロビジョニング題材にして上級編テーマを確保（§8.2）|
+| Terraform state 管理 | **bootstrap モジュールで TF 管理**（S3 + DynamoDB ロック）| `infra/terraform/bootstrap/`。ほぼ無料 |
+| apply 方針 | **author-only / オンデマンド** | 必要なファイルだけ作り、高額リソースは常駐させず必要時のみ apply→検証後 destroy。学習・CI は `terraform validate` まで無課金で回す |
+
+### 12.2 引き続き未決
+
+- **フロントの配信方式**: CloudFront + S3（静的書き出し）か、ECS で Next.js を SSR ホストするか。App Router の SSR 利用範囲に依存（Step 5 で確定）。
 - **private → 外部通信**: NAT Gateway か VPC エンドポイントか（コストと到達先で判断）。
 - **コスト試算**: MVP 規模（[§1.1](#11-想定スケールmvp)）での月額概算と、冗長度を上げた場合の差分。
 - **大規模化時の broker 切替**: スケールが想定を大きく超えた場合の StompBrokerRelay + RabbitMQ 移行（[realtime-design.md §10.1](realtime-design.md)）。

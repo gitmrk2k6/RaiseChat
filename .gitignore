@@ -52,10 +52,14 @@ logs/
 dump.rdb
 appendonly.aof
 
-# Terraform secrets
-infra/terraform.tfvars
+# Terraform
+# state は機密（接続情報を含み得る）。リポジトリに入れない。
+*.tfstate
+*.tfstate.*
+# プロバイダのローカルキャッシュ・作業ディレクトリ・plan 出力。
+**/.terraform/
+*.tfplan
+# 変数ファイルは秘匿値を含み得るため除外（*.tfvars.example はコミットする）。
 *.tfvars
-
-# Terraform local cache and plan output
-infra/.terraform/
-infra/tfplan
+!*.tfvars.example
+# .terraform.lock.hcl はコミットする（プロバイダ版の再現性のため除外しない）。

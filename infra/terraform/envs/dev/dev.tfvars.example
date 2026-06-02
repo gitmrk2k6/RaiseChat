@@ -1,0 +1,7 @@
+# dev 環境の変数値の雛形。実値を使うときは dev.tfvars にコピーして編集する。
+#   cp dev.tfvars.example dev.tfvars
+#   terraform plan -var-file=dev.tfvars
+# ※ dev.tfvars（拡張子 .tfvars）は .gitignore 済み。秘匿値はここに書かず SSM / Secrets Manager へ。
+project_name = "raisechat"
+environment  = "dev"
+aws_region   = "ap-northeast-1"
