@@ -7,8 +7,9 @@
 # 想定される追加順（infra/terraform/README.md・docs/infrastructure.md 参照）:
 #   Step 2  module "network"  { source = "../../modules/network"  ... }  # VPC/Subnet/SG ← 実装済
 #   Step 3  module "data"     { source = "../../modules/data"     ... }  # RDS/ElastiCache
-#   Step 4  module "ecs"      { source = "../../modules/ecs"      ... }  # ECR/Fargate/ALB
-#   Step 5  module "frontend" { source = "../../modules/frontend" ... }  # CloudFront/S3
+#   Step 4  module "ecs"      { source = "../../modules/ecs"      ... }  # ECR/Fargate/ALB（backend）
+#   Step 5  フロントは ecs module に同居（ECS Fargate ホスト・単一 ALB パスルーティング）。
+#           §12.2 で当初の CloudFront/S3 案ではなく ECS ホストに確定したため modules/frontend は作らない。
 #   各 module には共通の入力として local.name_prefix / var.aws_region を渡す。
 # ===========================================================================
 
@@ -66,4 +67,10 @@ module "ecs" {
   s3_bucket          = var.s3_bucket
   ws_allowed_origins = var.ws_allowed_origins
   invite_base_url    = var.invite_base_url
+
+  # フロント（同一 ALB の default ターゲット。/api・/ws のみ backend へ振る）。
+  frontend_container_image = var.frontend_container_image
+  frontend_desired_count   = var.frontend_desired_count
+  frontend_task_cpu        = var.frontend_task_cpu
+  frontend_task_memory     = var.frontend_task_memory
 }

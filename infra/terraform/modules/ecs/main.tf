@@ -1,9 +1,14 @@
 # ===========================================================================
 # ecs module — ECR / ALB / ECS Fargate / CloudWatch Logs / IAM / シークレット
 #
-# 正とする設計: docs/infrastructure.md §3 / §4 / §6.1 / §9 / §10。
-# アプリ層（Spring Boot）をステートレスに Fargate で複数タスク・Multi-AZ 実行し、
-# ALB で WSS/443（または HTTP/80 フォールバック）を終端して private の ECS へ転送する。
+# 正とする設計: docs/infrastructure.md §3 / §4 / §6.1 / §9 / §10 / §12.2。
+# アプリ層（Spring Boot バックエンド + Next.js フロントエンド）をステートレスに
+# Fargate で複数タスク・Multi-AZ 実行し、単一 ALB で WSS/443（または HTTP/80
+# フォールバック）を終端する。ALB のパスルーティングで同一オリジン配信する（§12.2 / Step5）:
+#   default        → frontend（Next.js standalone, port 3000）
+#   /api/*         → backend（Spring Boot REST, 8080）
+#   /ws・/ws/*     → backend（SockJS / STOMP, 8080）
+# これによりブラウザは相対 URL で REST/WS を叩け、CORS を踏まない。
 # network（public/private subnet・alb_sg・ecs_sg）と data（DB シークレット・Redis）の
 # 出力を配線する。共通タグは呼び出し元 provider の default_tags が自動付与する。
 #
@@ -16,10 +21,12 @@
 data "aws_region" "current" {}
 
 locals {
-  container_name = "${var.name_prefix}-backend"
+  container_name          = "${var.name_prefix}-backend"
+  frontend_container_name = "${var.name_prefix}-frontend"
 
   # container_image 未指定なら本モジュールの ECR の :latest を使う（push 後に apply する想定）。
-  image = var.container_image != "" ? var.container_image : "${aws_ecr_repository.backend.repository_url}:latest"
+  image          = var.container_image != "" ? var.container_image : "${aws_ecr_repository.backend.repository_url}:latest"
+  frontend_image = var.frontend_container_image != "" ? var.frontend_container_image : "${aws_ecr_repository.frontend.repository_url}:latest"
 
   # application.yml の spring.datasource.url（localhost 固定）を環境変数で上書きする。
   # Spring の relaxed binding により SPRING_DATASOURCE_URL が yml 値を上書きするためコード変更不要。
@@ -85,6 +92,39 @@ resource "aws_ecr_lifecycle_policy" "backend" {
   })
 }
 
+# フロントエンド（Next.js standalone）のイメージ置き場。スキャン・失効方針は backend と同じ。
+resource "aws_ecr_repository" "frontend" {
+  name                 = "${var.name_prefix}-frontend"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Name = "${var.name_prefix}-frontend"
+  }
+}
+
+resource "aws_ecr_lifecycle_policy" "frontend" {
+  repository = aws_ecr_repository.frontend.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "expire untagged images older than 7 days"
+      selection = {
+        tagStatus   = "untagged"
+        countType   = "sinceImagePushed"
+        countUnit   = "days"
+        countNumber = 7
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
+
 # ===========================================================================
 # CloudWatch Logs — アプリの標準出力集約先（§9）
 # ===========================================================================
@@ -94,6 +134,15 @@ resource "aws_cloudwatch_log_group" "backend" {
 
   tags = {
     Name = "/ecs/${var.name_prefix}-backend"
+  }
+}
+
+resource "aws_cloudwatch_log_group" "frontend" {
+  name              = "/ecs/${var.name_prefix}-frontend"
+  retention_in_days = var.log_retention_days
+
+  tags = {
+    Name = "/ecs/${var.name_prefix}-frontend"
   }
 }
 
@@ -268,7 +317,31 @@ resource "aws_lb_target_group" "backend" {
   }
 }
 
-# HTTPS:443 — 証明書がある時だけ張る（WSS 終端）。
+# フロントエンド（Next.js standalone, port 3000）の target group。
+# SSR はステートレスでセッションアフィニティ不要なのでスティッキーは張らない。
+# ヘルスチェックはアプリ状態に依存しない /healthz（200 固定）を使う。
+resource "aws_lb_target_group" "frontend" {
+  name        = "${var.name_prefix}-fe-tg"
+  port        = var.frontend_container_port
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+
+  health_check {
+    path                = "/healthz"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+
+  tags = {
+    Name = "${var.name_prefix}-fe-tg"
+  }
+}
+
+# HTTPS:443 — 証明書がある時だけ張る（WSS 終端）。default はフロントへ。
 resource "aws_lb_listener" "https" {
   count             = local.https_enabled ? 1 : 0
   load_balancer_arn = aws_lb.this.arn
@@ -279,11 +352,11 @@ resource "aws_lb_listener" "https" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.backend.arn
+    target_group_arn = aws_lb_target_group.frontend.arn
   }
 }
 
-# HTTP:80 — 証明書ありなら 443 へリダイレクト、なしなら target group へ直接転送（フォールバック）。
+# HTTP:80 — 証明書ありなら 443 へリダイレクト、なしなら default をフロントへ直接転送（フォールバック）。
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.this.arn
   port              = 80
@@ -291,7 +364,7 @@ resource "aws_lb_listener" "http" {
 
   default_action {
     type             = local.https_enabled ? "redirect" : "forward"
-    target_group_arn = local.https_enabled ? null : aws_lb_target_group.backend.arn
+    target_group_arn = local.https_enabled ? null : aws_lb_target_group.frontend.arn
 
     dynamic "redirect" {
       for_each = local.https_enabled ? [1] : []
@@ -300,6 +373,32 @@ resource "aws_lb_listener" "http" {
         protocol    = "HTTPS"
         status_code = "HTTP_301"
       }
+    }
+  }
+}
+
+# 実際にトラフィックを処理するリスナー（https があればそちら、なければ http）。
+# バックエンド向けパスルールはここに張る（http→https リダイレクト時は 443 側で評価される）。
+# https は count で 0/1 個になるため one() で取り出し、無ければ http にフォールバックする
+# （三項の index 直アクセスは count=0 時に評価エラーになり得るため避ける）。
+locals {
+  serving_listener_arn = coalesce(one(aws_lb_listener.https[*].arn), aws_lb_listener.http.arn)
+}
+
+# REST（/api/*）と WebSocket（/ws・/ws/*）だけをバックエンドへ振り、それ以外（= 画面）は
+# default のフロントへ流す。SockJS は /ws 配下に複数パスを使うためワイルドカードも含める。
+resource "aws_lb_listener_rule" "backend" {
+  listener_arn = local.serving_listener_arn
+  priority     = 10
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.backend.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/*", "/ws", "/ws/*"]
     }
   }
 }
@@ -399,5 +498,98 @@ resource "aws_ecs_service" "backend" {
     ignore_changes = [task_definition]
   }
 
+  # default はフロントへ向くため、バックエンドは path ルール経由でのみ届く。
+  depends_on = [aws_lb_listener_rule.backend]
+}
+
+# --- フロントエンド（Next.js standalone）---------------------------------
+# 機密注入なし。NEXT_PUBLIC_* はビルド時にバンドルへ焼くため runtime env は最小。
+# standalone の server.js は PORT / HOSTNAME を見る（Dockerfile で設定済みだが明示しておく）。
+resource "aws_ecs_task_definition" "frontend" {
+  family                   = "${var.name_prefix}-frontend"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = var.frontend_task_cpu
+  memory                   = var.frontend_task_memory
+  execution_role_arn       = aws_iam_role.execution.arn
+  task_role_arn            = aws_iam_role.task.arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = var.cpu_architecture
+  }
+
+  container_definitions = jsonencode([{
+    name      = local.frontend_container_name
+    image     = local.frontend_image
+    essential = true
+
+    portMappings = [{
+      containerPort = var.frontend_container_port
+      protocol      = "tcp"
+    }]
+
+    environment = [
+      { name = "NODE_ENV", value = "production" },
+      { name = "PORT", value = tostring(var.frontend_container_port) },
+      { name = "HOSTNAME", value = "0.0.0.0" },
+    ]
+
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.frontend.name
+        "awslogs-region"        = data.aws_region.current.name
+        "awslogs-stream-prefix" = "frontend"
+      }
+    }
+  }])
+
+  tags = {
+    Name = "${var.name_prefix}-frontend"
+  }
+}
+
+resource "aws_ecs_service" "frontend" {
+  name            = "${var.name_prefix}-frontend"
+  cluster         = aws_ecs_cluster.this.id
+  task_definition = aws_ecs_task_definition.frontend.arn
+  desired_count   = var.frontend_desired_count
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    security_groups  = [var.ecs_sg_id]
+    assign_public_ip = false
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.frontend.arn
+    container_name   = local.frontend_container_name
+    container_port   = var.frontend_container_port
+  }
+
+  # Next standalone は起動が速いが、初回 pull/起動の猶予を少し取る。
+  health_check_grace_period_seconds = 60
+
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
+
+  # default アクションがフロント TG を指すので、リスナー本体に依存させる。
   depends_on = [aws_lb_listener.http]
+}
+
+# ===========================================================================
+# SG 経路（フロント分）— ALB SG から ECS タスクの 3000 を許可する。
+# network module の ecs_sg は 8080（backend）のみ開けているため、frontend 用に
+# このモジュールで 3000 の ingress を追加する（フロントを ECS でホストする Step5 の都合）。
+# ===========================================================================
+resource "aws_vpc_security_group_ingress_rule" "ecs_frontend_from_alb" {
+  security_group_id            = var.ecs_sg_id
+  description                  = "frontend port ${var.frontend_container_port} from ALB SG"
+  referenced_security_group_id = var.alb_sg_id
+  from_port                    = var.frontend_container_port
+  to_port                      = var.frontend_container_port
+  ip_protocol                  = "tcp"
 }

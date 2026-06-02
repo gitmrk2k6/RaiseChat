@@ -92,6 +92,31 @@ variable "ecs_task_memory" {
   default     = 1024
 }
 
+# --- フロントエンド（ECS ホスト・単一 ALB パスルーティング / Step5）---------
+variable "frontend_container_image" {
+  description = "フロント ECS タスクのコンテナイメージ。空なら本スタックの frontend ECR の :latest を使う（push 後に apply）"
+  type        = string
+  default     = ""
+}
+
+variable "frontend_desired_count" {
+  description = "フロント ECS サービスの希望タスク数。§6.1「2 タスク以上」に従い既定 2"
+  type        = number
+  default     = 2
+}
+
+variable "frontend_task_cpu" {
+  description = "フロント ECS タスクの CPU ユニット。SSR は軽いので既定 256"
+  type        = number
+  default     = 256
+}
+
+variable "frontend_task_memory" {
+  description = "フロント ECS タスクのメモリ（MiB）。既定 512"
+  type        = number
+  default     = 512
+}
+
 variable "s3_bucket" {
   description = "アバター/添付の S3 バケット名（タスクロールのスコープと S3_BUCKET 環境変数）"
   type        = string

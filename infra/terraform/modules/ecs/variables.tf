@@ -146,6 +146,45 @@ variable "desired_count" {
   }
 }
 
+# --- フロントエンド（Next.js standalone）-----------------------------------
+variable "frontend_container_image" {
+  description = <<-EOT
+    フロントエンドが起動するコンテナイメージ（例 <ecr>/<repo>:<tag>）。
+    空文字なら本モジュールが作る frontend ECR の :latest を使う（初回は push 後に apply する想定）。
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "frontend_container_port" {
+  description = "Next.js standalone のリッスンポート（既定 3000）。target group / SG 経路と一致させる"
+  type        = number
+  default     = 3000
+}
+
+variable "frontend_task_cpu" {
+  description = "フロントタスクの CPU ユニット。SSR は軽いので MVP は 256 から"
+  type        = number
+  default     = 256
+}
+
+variable "frontend_task_memory" {
+  description = "フロントタスクのメモリ（MiB）。frontend_task_cpu と整合する組み合わせにする。MVP は 512 から"
+  type        = number
+  default     = 512
+}
+
+variable "frontend_desired_count" {
+  description = "フロント ECS サービスの希望タスク数。§6.1 に従い既定 2（Multi-AZ 分散）"
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.frontend_desired_count >= 1
+    error_message = "frontend_desired_count は 1 以上にする。"
+  }
+}
+
 # --- ALB TLS（cert トグル） -------------------------------------------------
 variable "certificate_arn" {
   description = <<-EOT

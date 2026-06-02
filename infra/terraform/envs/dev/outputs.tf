@@ -73,14 +73,19 @@ output "redis_port" {
   value       = module.data.redis_port
 }
 
-# --- ecs module（Step 4）----------------------------------------------------
+# --- ecs module（Step 4 / Step 5）------------------------------------------
 output "ecr_repository_url" {
   description = "バックエンドの ECR リポジトリ URL（CI が docker push する先）"
   value       = module.ecs.ecr_repository_url
 }
 
+output "frontend_ecr_repository_url" {
+  description = "フロントエンドの ECR リポジトリ URL（CI が docker push する先 / Step5）"
+  value       = module.ecs.frontend_ecr_repository_url
+}
+
 output "alb_dns_name" {
-  description = "ALB の DNS 名（E2E の接続先 / Route 53 alias 先）"
+  description = "ALB の DNS 名（E2E の接続先 / Route 53 alias 先）。default はフロント、/api・/ws は backend"
   value       = module.ecs.alb_dns_name
 }
 
@@ -90,8 +95,13 @@ output "ecs_cluster_name" {
 }
 
 output "ecs_service_name" {
-  description = "ECS サービス名（CD のサービス更新で指定）"
+  description = "バックエンド ECS サービス名（CD のサービス更新で指定）"
   value       = module.ecs.ecs_service_name
+}
+
+output "frontend_ecs_service_name" {
+  description = "フロント ECS サービス名（CD のサービス更新で指定 / Step5）"
+  value       = module.ecs.frontend_ecs_service_name
 }
 
 output "log_group_name" {

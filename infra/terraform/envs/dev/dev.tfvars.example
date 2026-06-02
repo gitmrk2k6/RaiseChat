@@ -32,6 +32,14 @@ ecs_desired_count = 2
 ecs_task_cpu      = 512
 ecs_task_memory   = 1024
 s3_bucket         = "raisechat-avatars"
-# 本番はフロントのドメインを渡す（例 https://app.example.com）。空ならアプリ既定（localhost:3000）。
+# 単一 ALB の同一オリジン配信なら CORS は不要。別オリジンにする場合のみフロントのドメインを渡す。
 ws_allowed_origins = ""
 invite_base_url    = ""
+
+# --- フロント（Step 5 / ECS ホスト・単一 ALB パスルーティング）---
+# default → フロント(3000) / /api・/ws → backend(8080)。同一オリジンなので CORS 不要。
+# frontend_container_image 未指定なら frontend ECR の :latest を使う（先に docker push してから apply）。
+frontend_container_image = ""
+frontend_desired_count   = 2
+frontend_task_cpu        = 256
+frontend_task_memory     = 512

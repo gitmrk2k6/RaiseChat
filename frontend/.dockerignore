@@ -1,0 +1,14 @@
+# コンテナビルドに不要なものを除外して文脈を小さくする（infrastructure.md §12.2 / Step5）。
+node_modules
+.next
+out
+build
+npm-debug.log*
+.git
+.gitignore
+.env*
+*.md
+.vscode
+.idea
+Dockerfile
+.dockerignore
