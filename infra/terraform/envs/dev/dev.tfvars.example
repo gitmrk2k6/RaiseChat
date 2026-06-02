@@ -12,3 +12,11 @@ azs_count = 2
 # NAT Gateway は時間課金。通常は false（validate / 待機中は作らない）。
 # 実際にアプリをデプロイして E2E 検証する apply のときだけ true にする。
 enable_nat_gateway = false
+
+# --- data（Step 3）---
+# RDS / ElastiCache は存在するだけで時間課金される。apply は E2E 検証時のみ・検証後 destroy。
+db_instance_class = "db.t4g.micro"
+redis_node_type   = "cache.t4g.micro"
+# 冗長度は通常 OFF（最小）。E2E で Multi-AZ / レプリカを検証するときだけ引き上げる。
+db_multi_az              = false
+redis_num_cache_clusters = 1
