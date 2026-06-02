@@ -259,9 +259,11 @@ ECS Fargate は OS 層をユーザーが管理しないため、従来型の「�
 | ログ | アプリは**構造化ログを標準出力**し、ECS から **CloudWatch Logs** に集約。[リアルタイム通信設計書 §10](realtime-design.md) の `sessionId` / `userId` / `destination` / `messageId` を全イベントログに含める方針と整合させる |
 | メトリクス | CloudWatch Metrics で CPU / メモリ / タスク数 / ALB のリクエスト数・5xx・レイテンシ・WebSocket 接続数を監視 |
 | ヘルスチェック | Spring Boot Actuator の `/actuator/health` を導入し、ALB のターゲットヘルスチェックに使う想定 |
-| アラート | しきい値超過（5xx 増・タスク異常）で CloudWatch Alarm → 通知（具体的な通知先は運用フェーズで確定）|
+| アラート | しきい値超過で CloudWatch Alarm → **SNS トピック**へ通知。ECS CPU/メモリ高負荷・稼働タスク数低下（RunningTaskCount < desired）・ALB 5xx 増・ターゲット異常ホスト（UnHealthyHostCount）をカバー。**通知先（メール / Slack 等）の購読は apply 後に手動追加**（宛先を state・コードに残さない）|
 
-> Actuator は現状の依存に未追加。導入時は `backend/build.gradle` に `spring-boot-starter-actuator` を加え、[tech-stack.md](tech-stack.md) の該当表も同 PR で更新する。
+> **実装**: アラーム / ダッシュボード / SNS は [`infra/terraform/modules/monitoring`](../infra/terraform/modules/monitoring/README.md)（⑤Step7）。ログ集約は [`modules/ecs`](../infra/terraform/modules/ecs/README.md) の CloudWatch Logs で実装済み。`RunningTaskCount` は cluster の Container Insights 有効化により取得する。
+>
+> **Actuator は [`modules/ecs`](../infra/terraform/modules/ecs/README.md)（⑤Step4）で導入済み**（`spring-boot-starter-actuator` 追加・Security で `/actuator/health` を permit・ALB バックエンド TG のヘルスチェック先）。
 
 ---
 

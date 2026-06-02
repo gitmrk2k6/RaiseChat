@@ -100,3 +100,23 @@ module "cicd" {
     module.ecs.ecs_task_role_arn,
   ]
 }
+
+# Step 7: 監視（CloudWatch アラーム / ダッシュボード / SNS 通知トピック）。
+# ecs module の output（クラスタ名・サービス名・ALB/TG の ARN suffix）と desired count を
+# 配線する。SNS の購読は apply 後に手動追加（infrastructure.md §9）。author-only。
+module "monitoring" {
+  source      = "../../modules/monitoring"
+  name_prefix = local.name_prefix
+  aws_region  = var.aws_region
+
+  cluster_name          = module.ecs.ecs_cluster_name
+  backend_service_name  = module.ecs.ecs_service_name
+  frontend_service_name = module.ecs.frontend_ecs_service_name
+
+  backend_desired_count  = var.ecs_desired_count
+  frontend_desired_count = var.frontend_desired_count
+
+  alb_arn_suffix                   = module.ecs.alb_arn_suffix
+  backend_target_group_arn_suffix  = module.ecs.backend_target_group_arn_suffix
+  frontend_target_group_arn_suffix = module.ecs.frontend_target_group_arn_suffix
+}

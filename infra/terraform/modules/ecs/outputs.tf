@@ -35,6 +35,23 @@ output "alb_arn" {
   value       = aws_lb.this.arn
 }
 
+# CloudWatch の AWS/ApplicationELB メトリクスは ARN の suffix（app/<name>/<id>・
+# targetgroup/<name>/<id>）をディメンションに使う。監視モジュール（⑤Step7）へ配線する。
+output "alb_arn_suffix" {
+  description = "ALB の ARN suffix（CloudWatch LoadBalancer ディメンション用）"
+  value       = aws_lb.this.arn_suffix
+}
+
+output "backend_target_group_arn_suffix" {
+  description = "バックエンド TG の ARN suffix（CloudWatch TargetGroup ディメンション用）"
+  value       = aws_lb_target_group.backend.arn_suffix
+}
+
+output "frontend_target_group_arn_suffix" {
+  description = "フロント TG の ARN suffix（CloudWatch TargetGroup ディメンション用）"
+  value       = aws_lb_target_group.frontend.arn_suffix
+}
+
 # --- ECS --------------------------------------------------------------------
 output "ecs_cluster_name" {
   description = "ECS クラスタ名（CD のサービス更新で指定する）"
