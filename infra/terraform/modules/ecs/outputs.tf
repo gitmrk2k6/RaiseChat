@@ -9,6 +9,16 @@ output "ecr_repository_name" {
   value       = aws_ecr_repository.backend.name
 }
 
+output "frontend_ecr_repository_url" {
+  description = "フロントエンドの ECR リポジトリ URL（CI が docker push する先）"
+  value       = aws_ecr_repository.frontend.repository_url
+}
+
+output "frontend_ecr_repository_name" {
+  description = "フロントエンドの ECR リポジトリ名"
+  value       = aws_ecr_repository.frontend.name
+}
+
 # --- ALB --------------------------------------------------------------------
 output "alb_dns_name" {
   description = "ALB の DNS 名（Route 53 の別名レコード先・E2E の接続先）"
@@ -32,8 +42,13 @@ output "ecs_cluster_name" {
 }
 
 output "ecs_service_name" {
-  description = "ECS サービス名（CD のサービス更新で指定する）"
+  description = "バックエンド ECS サービス名（CD のサービス更新で指定する）"
   value       = aws_ecs_service.backend.name
+}
+
+output "frontend_ecs_service_name" {
+  description = "フロント ECS サービス名（CD のサービス更新で指定する）"
+  value       = aws_ecs_service.frontend.name
 }
 
 output "task_definition_arn" {

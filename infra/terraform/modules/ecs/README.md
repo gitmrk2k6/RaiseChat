@@ -1,17 +1,22 @@
 # modules/ecs
 
 RaiseChat のアプリ実行基盤（ECR / ALB / ECS Fargate / CloudWatch Logs / IAM / シークレット）。
-設計の正は [docs/infrastructure.md §3・§4・§6.1・§9・§10](../../../../docs/infrastructure.md)。
+**バックエンド（Spring Boot）とフロントエンド（Next.js standalone）の両サービスを単一 ALB で
+ホストする**（フロント配信は §12.2 で ECS ホストに確定）。
+設計の正は [docs/infrastructure.md §3・§4・§6.1・§9・§10・§12.2](../../../../docs/infrastructure.md)。
 
 ## 責務
 
-- **ECR**: バックエンドのイメージ置き場（`scan_on_push` / untagged 失効 / `force_delete`）
+- **ECR**: バックエンド / フロントエンド 2 つのイメージ置き場（`scan_on_push` / untagged 失効 / `force_delete`）
 - **ALB**: 外部公開点。public subnet に置き、証明書があれば HTTPS:443（WSS 終端）、なければ
-  HTTP:80 を target group へ転送。target group は `target_type=ip`・8080・**スティッキー（lb_cookie）**
-- **ECS Fargate**: cluster / service（private subnet・`desired_count` 既定 2 で Multi-AZ）/ task definition
-- **CloudWatch Logs**: `awslogs` ドライバで標準出力を集約（§9）
-- **IAM**: 実行ロール（ECR pull / Logs / シークレット取得）＋ タスクロール（S3。静的キーを持たせない・§10）
-- **シークレット**: `JWT_SECRET` を Secrets Manager に生成、Redis 接続情報を SSM Parameter Store に投入（§10）
+  HTTP:80 を転送。**パスルーティングで同一オリジン配信**する:
+  - `default`（画面）→ **フロント TG**（`target_type=ip`・3000・`/healthz` ヘルスチェック）
+  - `/api/*`・`/ws`・`/ws/*` → **バックエンド TG**（`target_type=ip`・8080・**スティッキー lb_cookie**・`/actuator/health`）
+- **ECS Fargate**: cluster（共有）/ backend・frontend の 2 service（private subnet・各 `desired_count` 既定 2 で Multi-AZ）/ 2 task definition
+- **CloudWatch Logs**: backend / frontend それぞれに `awslogs` ロググループ（§9）
+- **IAM**: 実行ロール（ECR pull / Logs / シークレット取得）＋ タスクロール（S3。静的キーを持たせない・§10）。両サービスで共用
+- **シークレット**: `JWT_SECRET` を Secrets Manager に生成、Redis 接続情報を SSM Parameter Store に投入（backend のみ・§10）
+- **SG 経路**: フロント用に ALB SG → ECS 3000 の ingress を追加（network の ecs_sg は 8080 のみ開けているため）
 
 ## network / data module との配線
 
@@ -42,8 +47,12 @@ data.redis_primary_endpoint_address ─▶ SSM（REDIS_HOST）
 
 - **S3 はタスクロール認証**: `StorageConfig` は `S3_ENDPOINT` が空のとき `endpointOverride` を外し
   `DefaultCredentialsProvider`（=タスクロール）に切り替える（§10）。
-- **ヘルスチェック**: ALB は `/actuator/health` を叩く。Spring Boot Actuator を有効化し、
-  Security で同パスを認証不要にしておく（§9）。
+- **ヘルスチェック**: バックエンド TG は `/actuator/health`、フロント TG は `/healthz` を叩く。
+  Spring Boot は Actuator を有効化し同パスを認証不要に（§9）。フロントは `app/healthz/route.ts` が 200 を返す。
+- **フロントは standalone**: `next.config.mjs` の `output: 'standalone'` 前提。`frontend/Dockerfile` が
+  `.next/standalone` を薄い Node ランタイムに載せ、`PORT=3000` / `HOSTNAME=0.0.0.0` で待受する。
+- **同一オリジン配信**: ブラウザは相対 URL（`NEXT_PUBLIC_API_BASE` 空・SockJS は `/ws` 相対）で叩き、
+  ALB が `/api`・`/ws` をバックエンドへ振る。別オリジン配信時のみ `NEXT_PUBLIC_*` を build-arg で渡す。
 
 ## ALB TLS（cert トグル）
 
@@ -77,15 +86,20 @@ data.redis_primary_endpoint_address ─▶ SSM（REDIS_HOST）
 | `container_image` | string | `""` | 空なら本モジュールの ECR の `:latest` |
 | `container_port` | number | `8080` | アプリのポート |
 | `cpu_architecture` | string | `X86_64` | Fargate アーキ（push イメージと一致させる）|
-| `task_cpu` / `task_memory` | number | `512` / `1024` | タスクのサイジング |
-| `desired_count` | number | `2` | 希望タスク数（§6.1 で 2 以上が基本）|
+| `task_cpu` / `task_memory` | number | `512` / `1024` | バックエンドタスクのサイジング |
+| `desired_count` | number | `2` | バックエンド希望タスク数（§6.1 で 2 以上が基本）|
+| `frontend_container_image` | string | `""` | 空なら本モジュールの frontend ECR の `:latest` |
+| `frontend_container_port` | number | `3000` | フロント（Next.js standalone）のポート |
+| `frontend_task_cpu` / `frontend_task_memory` | number | `256` / `512` | フロントタスクのサイジング |
+| `frontend_desired_count` | number | `2` | フロント希望タスク数（§6.1）|
 | `certificate_arn` | string | `""` | ACM 証明書 ARN（指定で HTTPS:443 終端）|
 | `log_retention_days` | number | `14` | CloudWatch Logs 保持日数 |
 
 ## 出力
 
-`ecr_repository_url` / `ecr_repository_name` / `alb_dns_name` / `alb_zone_id` / `alb_arn` /
-`ecs_cluster_name` / `ecs_service_name` / `task_definition_arn` / `log_group_name` / `jwt_secret_arn`
+`ecr_repository_url` / `ecr_repository_name` / `frontend_ecr_repository_url` / `frontend_ecr_repository_name` /
+`alb_dns_name` / `alb_zone_id` / `alb_arn` / `ecs_cluster_name` / `ecs_service_name` /
+`frontend_ecs_service_name` / `task_definition_arn` / `log_group_name` / `jwt_secret_arn`
 
 ## 呼び出し例（envs/dev）
 
@@ -113,5 +127,11 @@ module "ecs" {
   s3_bucket          = var.s3_bucket
   ws_allowed_origins = var.ws_allowed_origins
   invite_base_url    = var.invite_base_url
+
+  # フロント（同一 ALB の default ターゲット。/api・/ws のみ backend へ振る）
+  frontend_container_image = var.frontend_container_image
+  frontend_desired_count   = var.frontend_desired_count
+  frontend_task_cpu        = var.frontend_task_cpu
+  frontend_task_memory     = var.frontend_task_memory
 }
 ```

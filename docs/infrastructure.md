@@ -83,24 +83,24 @@ RaiseChat の本番インフラは **AWS 上に構築する**。基本スタン�
         ユーザー ───────▶ │  Route 53    │  DNS
                           └──────┬───────┘
                                  │
+                        ┌────────▼─────────┐
+                        │       ALB        │  HTTPS/WSS 終端（ACM 証明書）
+                        │ (Application LB) │  パスルーティングで同一オリジン配信
+                        └────────┬─────────┘
+              default（画面）     │      /api・/ws（REST / SockJS）
                  ┌───────────────┴───────────────┐
                  │                               │
-        ┌────────▼────────┐            ┌─────────▼─────────┐
-        │   CloudFront    │  静的配信   │       ALB         │  HTTPS/WSS 終端
-        │  （フロント／   │            │ (Application      │  (ACM 証明書)
-        │   静的アセット）│            │  Load Balancer)   │
-        └────────┬────────┘            └─────────┬─────────┘
-                 │ origin                        │  /api, /ws を転送
-                 │                               │
-        ┌────────▼────────┐         ┌────────────▼────────────────────┐
-        │   S3（静的）／  │         │        VPC（private subnet）      │
-        │   Next.js ホスト│         │  ┌────────────┐  ┌────────────┐  │
-        └─────────────────┘         │  │ ECS Fargate│  │ ECS Fargate│  │  ← 複数タスク
-                                     │  │  task (AZ-a)│ │  task (AZ-c)│  │     Multi-AZ
-                                     │  │ Spring Boot │ │ Spring Boot │  │
-                                     │  └─────┬──────┘  └──────┬─────┘  │
-                                     │        │                │        │
-                  ┌──────────────────┼────────┼────────────────┼────────┼──────────────┐
+   ┌─────────────▼──────────────┐   ┌────────────▼────────────────────┐
+   │   VPC（private subnet）     │   │        VPC（private subnet）      │
+   │  ┌────────────┐ ┌────────┐ │   │  ┌────────────┐  ┌────────────┐  │
+   │  │ ECS Fargate│ │ECS Far.│ │   │  │ ECS Fargate│  │ ECS Fargate│  │  ← 複数タスク
+   │  │ task (AZ-a)│ │(AZ-c)  │ │   │  │  task (AZ-a)│ │  task (AZ-c)│  │     Multi-AZ
+   │  │  Next.js   │ │ Next.js│ │   │  │ Spring Boot │ │ Spring Boot │  │
+   │  │ (standalone)│ │        │ │   │  └─────┬──────┘  └──────┬─────┘  │
+   │  └────────────┘ └────────┘ │   │        │                │        │
+   └────────────────────────────┘   └────────┼────────────────┼────────┘
+                                              │                │
+                  ┌──────────────────┬────────┼────────────────┼────────┬──────────────┐
                   │                  │        │                │        │              │
           ┌───────▼────────┐  ┌──────▼────────▼─┐   ┌──────────▼────────▼──┐   ┌───────▼───────┐
           │ ElastiCache    │  │ RDS for          │   │   S3（アバター／      │   │ CloudWatch    │
@@ -113,9 +113,12 @@ RaiseChat の本番インフラは **AWS 上に構築する**。基本スタン�
    ※ シークレット（JWT_SECRET / DB / Redis / S3 認証情報）は SSM Parameter Store / Secrets Manager から注入（§10）
 ```
 
-- 外部公開点は **CloudFront（静的）と ALB（API / WebSocket）のみ**。アプリ・DB・Redis は private subnet に置く。
-- ALB は **WSS（WebSocket over TLS）を終端**し、`/ws`（STOMP over SockJS、[realtime-design.md](realtime-design.md)）と `/api`（REST）を ECS タスクへ転送する。
-- ECS Fargate のタスクを複数 AZ に分散して水平スケールし、タスク間のイベント配信は ElastiCache(Redis) Pub-Sub が橋渡しする（§6）。
+- 外部公開点は **ALB のみ**。フロント・バックエンド・DB・Redis はすべて private subnet に置く。
+- ALB は **WSS（WebSocket over TLS）を終端**し、**パスルーティングで同一オリジン配信**する（§12.2 で確定）:
+  - `default`（画面・静的アセット）→ **フロント ECS（Next.js standalone, port 3000）**
+  - `/api`（REST）・`/ws`（STOMP over SockJS、[realtime-design.md](realtime-design.md)）→ **バックエンド ECS（Spring Boot, 8080）**
+- 同一オリジンのためブラウザは相対 URL で REST/WS を叩け、**CORS を踏まない**。
+- フロント・バックエンドそれぞれの ECS Fargate タスクを複数 AZ に分散して水平スケールし、タスク間のイベント配信は ElastiCache(Redis) Pub-Sub が橋渡しする（§6）。
 
 ---
 
@@ -125,9 +128,9 @@ RaiseChat の本番インフラは **AWS 上に構築する**。基本スタン�
 
 | 論理要素 | ローカル（dev）| 本番（AWS）| 備考 |
 | --- | --- | --- | --- |
-| フロント（Next.js）| `npm run dev`（port 3000）| CloudFront + S3（静的）/ または ECS でホスト | 配信方式は §11・§12 で扱う |
-| バックエンド（Spring Boot）| ローカル JVM（port 8080）| ECS Fargate（コンテナ・複数タスク）| ステートレス。コンテナイメージは ECR |
-| ロードバランサ / TLS 終端 | なし（直接アクセス）| ALB + ACM（証明書）| WSS / REST を終端・振り分け |
+| フロント（Next.js）| `npm run dev`（port 3000）| ECS Fargate（standalone・複数タスク）| §12.2 で確定。単一 ALB の default ターゲット。イメージは ECR |
+| バックエンド（Spring Boot）| ローカル JVM（port 8080）| ECS Fargate（コンテナ・複数タスク）| ステートレス。コンテナイメージは ECR。ALB の `/api`・`/ws` ルール先 |
+| ロードバランサ / TLS 終端 | なし（直接アクセス）| ALB + ACM（証明書）| WSS / REST を終端し、パスでフロント / バックエンドへ振り分け |
 | DNS | localhost | Route 53 | 独自ドメイン |
 | キャッシュ / Pub-Sub | Redis（`redis:7-alpine`, 6379）| ElastiCache for Redis | キャッシュ（[cache-strategy.md](cache-strategy.md)）と Pub-Sub（[realtime-design.md](realtime-design.md)）兼用 |
 | RDB | PostgreSQL（`postgres:17-alpine`, 5432）| RDS for PostgreSQL（Multi-AZ）| スキーマは Flyway で管理（[tech-stack.md](tech-stack.md)）|
@@ -210,8 +213,8 @@ ECS(SG) ─────────▶ Redis(SG): 6379 を ECS SG からのみ�
 ```
 git push / PR merge (main)
    └─▶ GitHub Actions
-         ├─ backend: Gradle build → テスト → Docker build → ECR push → ECS サービス更新
-         └─ frontend: npm build → S3 同期（または ECS デプロイ）→ CloudFront キャッシュ無効化
+         ├─ backend : Gradle build → テスト → Docker build → ECR push → ECS サービス更新
+         └─ frontend: npm build → Docker build（standalone）→ ECR push → ECS サービス更新
 ```
 
 - イメージは **ECR** に push し、ECS のサービス更新（ローリングデプロイ）でタスクを入れ替える。
@@ -281,7 +284,7 @@ ECS Fargate は OS 層をユーザーが管理しないため、従来型の「�
 
 | 項目 | dev（ローカル）| 本番（AWS）|
 | --- | --- | --- |
-| 実行基盤 | Docker Compose / ローカル JVM・npm | ECS Fargate / CloudFront |
+| 実行基盤 | Docker Compose / ローカル JVM・npm | ECS Fargate（フロント・バックエンドとも）＋ 単一 ALB |
 | DB | `postgres:17-alpine`（compose）| RDS for PostgreSQL（Multi-AZ）|
 | キャッシュ/Pub-Sub | `redis:7-alpine`（compose）| ElastiCache for Redis |
 | オブジェクトストレージ | LocalStack（`storage` profile, 4566）| S3 |
@@ -306,11 +309,10 @@ ECS Fargate は OS 層をユーザーが管理しないため、従来型の「�
 | ECS 起動タイプ | **Fargate**（アプリ層）＋ **運用 EC2(bastion)** | bastion を Ansible のプロビジョニング題材にして上級編テーマを確保（§8.2）|
 | Terraform state 管理 | **bootstrap モジュールで TF 管理**（S3 + DynamoDB ロック）| `infra/terraform/bootstrap/`。ほぼ無料 |
 | apply 方針 | **author-only / オンデマンド** | 必要なファイルだけ作り、高額リソースは常駐させず必要時のみ apply→検証後 destroy。学習・CI は `terraform validate` まで無課金で回す |
+| フロントの配信方式 | **ECS Fargate でホスト（Next.js standalone）＋ 単一 ALB パスルーティング**（Step5 で確定）| CloudFront + S3 静的書き出しは不採用。動的ルート（任意 ID の workspace/channel/dm）が `output: 'export'` では 404 になり、catch-all でも Next 標準遷移がフルリロード化するため、独自クライアントルーターを自作せず Next 標準ルーティングをそのまま使える ECS ホストを選択。`default`→フロント / `/api`・`/ws`→バックエンドで同一オリジン配信し CORS 不要。実装は [`modules/ecs`](../infra/terraform/modules/ecs/) に同居 |
 
 ### 12.2 引き続き未決
 
-- **フロントの配信方式**: CloudFront + S3（静的書き出し）か、ECS で Next.js を SSR ホストするか。App Router の SSR 利用範囲に依存（Step 5 で確定）。
 - **private → 外部通信**: NAT Gateway か VPC エンドポイントか（コストと到達先で判断）。
 - **コスト試算**: MVP 規模（[§1.1](#11-想定スケールmvp)）での月額概算と、冗長度を上げた場合の差分。
 - **大規模化時の broker 切替**: スケールが想定を大きく超えた場合の StompBrokerRelay + RabbitMQ 移行（[realtime-design.md §10.1](realtime-design.md)）。
-- **CDN キャッシュ無効化**: デプロイ時の CloudFront invalidation 運用。
