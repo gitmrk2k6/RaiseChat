@@ -194,3 +194,4 @@ docker compose stop localstack                       # 停止
   - [要件定義書](docs/requirements.md)
   - [機能要件書](docs/functional-requirements.md)
   - [「Slack 風」の捉え方](docs/why-slack.md)
+  - [技術スタック](docs/tech-stack.md)
