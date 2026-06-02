@@ -21,3 +21,19 @@ module "network" {
   azs_count          = var.azs_count
   enable_nat_gateway = var.enable_nat_gateway
 }
+
+# Step 3: データ層（RDS for PostgreSQL / ElastiCache for Redis）。
+# network の出力（private subnet / RDS・Redis SG）を受けて private に配置する。
+# 冗長度（Multi-AZ / レプリカ）は既定で最小。E2E 検証時に tfvars で引き上げる。
+module "data" {
+  source             = "../../modules/data"
+  name_prefix        = local.name_prefix
+  private_subnet_ids = module.network.private_subnet_ids
+  rds_sg_id          = module.network.rds_sg_id
+  redis_sg_id        = module.network.redis_sg_id
+
+  db_instance_class        = var.db_instance_class
+  db_multi_az              = var.db_multi_az
+  redis_node_type          = var.redis_node_type
+  redis_num_cache_clusters = var.redis_num_cache_clusters
+}

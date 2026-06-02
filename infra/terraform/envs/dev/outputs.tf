@@ -41,3 +41,34 @@ output "redis_sg_id" {
   description = "Redis 用 SG ID"
   value       = module.network.redis_sg_id
 }
+
+# --- data module（Step 3）---------------------------------------------------
+output "db_instance_endpoint" {
+  description = "RDS エンドポイント（host:port）"
+  value       = module.data.db_instance_endpoint
+}
+
+output "db_instance_port" {
+  description = "RDS ポート"
+  value       = module.data.db_instance_port
+}
+
+output "db_name" {
+  description = "初期 DB 名"
+  value       = module.data.db_name
+}
+
+output "db_master_user_secret_arn" {
+  description = "RDS マスターパスワードの Secrets Manager ARN（ECS タスク定義から参照）"
+  value       = module.data.db_master_user_secret_arn
+}
+
+output "redis_primary_endpoint_address" {
+  description = "Redis プライマリエンドポイント"
+  value       = module.data.redis_primary_endpoint_address
+}
+
+output "redis_port" {
+  description = "Redis ポート"
+  value       = module.data.redis_port
+}
