@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Hash, Lock, Star, Info, UserPlus, UserMinus } from "lucide-react";
 import type { Channel } from "@/types";
 import { Avatar } from "@/components/ui/Avatar";
+import { usePresence } from "@/lib/presence/PresenceContext";
 import { getUser } from "@/lib/mock/users";
 import { InviteUserModal } from "@/components/modals/InviteUserModal";
 import { KickUserModal } from "@/components/modals/KickUserModal";
@@ -11,6 +12,7 @@ import { KickUserModal } from "@/components/modals/KickUserModal";
 export function ChannelHeader({ channel }: { channel: Channel }) {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [kickOpen, setKickOpen] = useState(false);
+  const { isOnline } = usePresence();
 
   return (
     <>
@@ -45,6 +47,7 @@ export function ChannelHeader({ channel }: { channel: Channel }) {
                     color={u.avatarColor}
                     size="xs"
                     className="ring-2 ring-white"
+                    online={isOnline(String(id))}
                   />
                 );
               })}

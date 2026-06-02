@@ -11,6 +11,7 @@ import { getWorkspace } from "@/lib/api/workspaces";
 import { queryKeys } from "@/lib/api/queryKeys";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useUnread } from "@/lib/notifications/NotificationContext";
+import { usePresence } from "@/lib/presence/PresenceContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/utils";
 import { CreateChannelModal } from "@/components/modals/CreateChannelModal";
@@ -20,6 +21,7 @@ export function Sidebar() {
   const workspaceId = params.workspaceId;
   const { user } = useAuth();
   const { getChannelUnread, getDmUnread } = useUnread();
+  const { isOnline } = usePresence();
 
   const { data: workspace } = useQuery({
     queryKey: queryKeys.workspace(workspaceId),
@@ -133,6 +135,7 @@ export function Sidebar() {
                       name={partner?.displayName ?? "?"}
                       color={partner?.avatarColor ?? "#6B7280"}
                       size="xs"
+                      online={isOnline(partner ? String(partner.id) : null)}
                     />
                     <span className="truncate">{partner?.displayName ?? "(不明)"}</span>
                   </span>

@@ -5,6 +5,7 @@ import com.raisechat.message.ws.MessageDmRedisSubscriber;
 import com.raisechat.message.ws.MessageThreadRedisSubscriber;
 import com.raisechat.message.ws.TypingRedisSubscriber;
 import com.raisechat.notification.ws.NotificationRedisSubscriber;
+import com.raisechat.presence.PresenceRedisSubscriber;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -31,6 +32,9 @@ public class RedisConfig {
     @Value("${app.redis.typing-prefix:typing:}")
     private String typingPrefix;
 
+    @Value("${app.redis.presence-channel:presence:changed}")
+    private String presenceChannel;
+
     @Bean
     public StringRedisTemplate stringRedisTemplate(RedisConnectionFactory factory) {
         return new StringRedisTemplate(factory);
@@ -43,7 +47,8 @@ public class RedisConfig {
             MessageDmRedisSubscriber dmSubscriber,
             MessageThreadRedisSubscriber threadSubscriber,
             NotificationRedisSubscriber notificationSubscriber,
-            TypingRedisSubscriber typingSubscriber
+            TypingRedisSubscriber typingSubscriber,
+            PresenceRedisSubscriber presenceSubscriber
     ) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(factory);
@@ -52,6 +57,8 @@ public class RedisConfig {
         container.addMessageListener(threadSubscriber, new PatternTopic(threadPrefix + "*"));
         container.addMessageListener(notificationSubscriber, new PatternTopic(notificationPrefix + "*"));
         container.addMessageListener(typingSubscriber, new PatternTopic(typingPrefix + "*"));
+        // presence はユーザー単位グローバルなので 1 本の固定チャンネル（ワイルドカード無し）。
+        container.addMessageListener(presenceSubscriber, new PatternTopic(presenceChannel));
         return container;
     }
 }
