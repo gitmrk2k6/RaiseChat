@@ -1,0 +1,50 @@
+# Claude Code 自動コードレビュー（フェーズ④）
+#
+# PR が開かれる / 更新されるたびに、Claude Code が差分をレビューしコメントを投稿する品質ゲート。
+# 公式 GA アクション anthropics/claude-code-action@v1 を code-review プラグインで利用する。
+#
+# 前提（リポジトリ admin による事前作業。未整備だとジョブは失敗する）:
+#   1. Claude GitHub App をインストール: https://github.com/apps/claude
+#   2. Repository secret `ANTHROPIC_API_KEY` を追加
+#      (Settings -> Secrets and variables -> Actions)
+#
+# レビュー観点・命名規則・GitHub フローはリポジトリ直下の CLAUDE.md を自動参照する。
+# デプロイ用ワークフロー（フェーズ⑤・マージ後 main で起動）は別ファイルで共存させる。
+
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+# 同一 PR で push が続いたときは古い実行をキャンセルし、API コストと実行時間を抑える。
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Claude Code review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
+          plugins: "code-review@claude-code-plugins"
+          prompt: "/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
+          # レビュー用途は Sonnet で十分・コストを抑える。
+          # 大型/重要な変更で深いレビューが要るときは --model claude-opus-4-8 に上げる。
+          claude_args: |
+            --model claude-sonnet-4-6
+            --max-turns 15
+            --append-system-prompt "レビューの指摘コメントは日本語で書いてください。CLAUDE.md の命名規則・GitHub ワークフロー・サーバー起動ルールに反する変更があれば指摘してください。"
