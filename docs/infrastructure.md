@@ -220,11 +220,13 @@ git push / PR merge (main)
 - イメージは **ECR** に push し、ECS のサービス更新（ローリングデプロイ）でタスクを入れ替える。
 - main への直接 push は禁止（[CLAUDE.md](../CLAUDE.md)）。デプロイの起点は **PR マージ後の main** とする。
 
+> **実装（⑤Step6）**: [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) で実装。GitHub→AWS は **OIDC** 認証（静的アクセスキー不要）で、デプロイロールは [`infra/terraform/modules/cicd`](../infra/terraform/modules/cicd) が main 限定・最小権限（ECR push / ECS UpdateService / 対象ロールへの PassRole）で発行する。イメージは commit SHA で固定タグ付けし、タスク定義を新リビジョン登録 → サービス更新。Flyway は起動時自動適用のため CD に専用ステップは設けない。
+
 ### 7.2 自動コードレビューとの関係
 
 - フェーズ④で導入する `.github/workflows/claude-code-review.yml`（Claude Code 自動コードレビュー）は **PR 時に走る品質ゲート**。
 - 本書のデプロイ用ワークフローは **マージ後（main）に走るデプロイゲート**。両者は別ワークフローとして共存させる。
-- 現状 `.github/workflows/` は未作成。フェーズ④でレビュー用、フェーズ⑤でデプロイ用を順に追加する。
+- 両ワークフローとも実装済み（④: `claude-code-review.yml` / ⑤: `deploy.yml`）。共存させて役割を分離している。
 
 ---
 

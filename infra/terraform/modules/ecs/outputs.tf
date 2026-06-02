@@ -66,3 +66,41 @@ output "jwt_secret_arn" {
   description = "JWT_SECRET を保管する Secrets Manager シークレットの ARN（§10）"
   value       = aws_secretsmanager_secret.jwt.arn
 }
+
+# --- CD（cicd module）が最小権限で参照する ARN 群（⑤Step6）-----------------
+# GitHub Actions のデプロイロールを「この環境のリソースだけ」に絞るため、
+# ECR / ECS / IAM ロールの ARN を出力して cicd module に配線する。
+output "backend_ecr_repository_arn" {
+  description = "バックエンド ECR リポジトリの ARN（CD の push 権限スコープ用）"
+  value       = aws_ecr_repository.backend.arn
+}
+
+output "frontend_ecr_repository_arn" {
+  description = "フロント ECR リポジトリの ARN（CD の push 権限スコープ用）"
+  value       = aws_ecr_repository.frontend.arn
+}
+
+output "ecs_cluster_arn" {
+  description = "ECS クラスタの ARN"
+  value       = aws_ecs_cluster.this.arn
+}
+
+output "ecs_service_arn" {
+  description = "バックエンド ECS サービスの ARN（CD の UpdateService スコープ用）"
+  value       = aws_ecs_service.backend.id
+}
+
+output "frontend_ecs_service_arn" {
+  description = "フロント ECS サービスの ARN（CD の UpdateService スコープ用）"
+  value       = aws_ecs_service.frontend.id
+}
+
+output "ecs_execution_role_arn" {
+  description = "ECS タスク実行ロールの ARN（CD の iam:PassRole スコープ用）"
+  value       = aws_iam_role.execution.arn
+}
+
+output "ecs_task_role_arn" {
+  description = "ECS タスクロールの ARN（CD の iam:PassRole スコープ用）"
+  value       = aws_iam_role.task.arn
+}

@@ -134,3 +134,22 @@ variable "invite_base_url" {
   type        = string
   default     = ""
 }
+
+# --- cicd module 用（⑤Step6 / GitHub Actions OIDC デプロイ）-----------------
+variable "github_owner" {
+  description = "GitHub オーナー（org / user）。デプロイロールの信頼ポリシー sub 条件に使う"
+  type        = string
+  default     = "gitmrk2k6"
+}
+
+variable "github_repo" {
+  description = "GitHub リポジトリ名。デプロイロールの信頼ポリシー sub 条件に使う"
+  type        = string
+  default     = "RaiseChat"
+}
+
+variable "github_deploy_branch" {
+  description = "デプロイを許可するブランチ。main マージ後の CD 起点（CLAUDE.md）"
+  type        = string
+  default     = "main"
+}

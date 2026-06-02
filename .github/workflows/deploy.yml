@@ -1,0 +1,205 @@
+# デプロイ用ワークフロー（⑤Step6 / infrastructure.md §7）
+#
+# main マージ後に走る「デプロイゲート」。GitHub→AWS を OIDC で接続し、フロント・
+# バックエンドのイメージを ECR に push して ECS サービスをローリング更新する。
+# PR 時に走る品質ゲート（claude-code-review.yml）とは別ワークフローとして共存させる。
+#
+# 【認証】静的な AWS アクセスキーは置かない。OIDC で短命トークンを発行し、
+#   Terraform（modules/cicd）が作るデプロイロールを assume する。
+#   ロール ARN は `terraform output deploy_role_arn` の値を
+#   リポジトリ変数 `AWS_DEPLOY_ROLE_ARN`（Settings → Variables → Actions）に設定する。
+#
+# 【デプロイ方式】イメージは commit SHA で固定タグ付けして push（再現性のため）。
+#   既存タスク定義を取得 → image だけ差し替えて新リビジョン登録 → サービス更新。
+#   ECS サービスは Terraform 側で lifecycle.ignore_changes=[task_definition] 済みなので、
+#   CD のリビジョン差し替えと Terraform の管理は競合しない。
+#
+# 【Flyway】DB マイグレーションは Spring Boot 起動時に自動適用されるため、
+#   CD に専用のマイグレーションステップは設けない。
+#
+# 【実行方針】infra が未 apply の間（ECS クラスタ未作成）は走らせると失敗する。
+#   apply 前は無効運用とし、apply 後に main への push で自動デプロイを運用に乗せる。
+#   任意のタイミングで動かすときは workflow_dispatch（手動）で対象を選んで起動する。
+
+name: Deploy to AWS (ECR / ECS)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "デプロイ対象サービス"
+        type: choice
+        options: [both, backend, frontend]
+        default: both
+
+# OIDC トークン取得に id-token: write が必須。リポジトリ内容の読み取りのみで足りる。
+permissions:
+  contents: read
+  id-token: write
+
+# 同一ブランチの連続 push では古いデプロイの完了を待ってから次を流す（途中キャンセルしない）。
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-1
+  ECS_CLUSTER: raisechat-dev-cluster # = name_prefix(raisechat-dev) + "-cluster"
+
+jobs:
+  # push の paths はワークフロー起動条件であってジョブ単位ではないため、
+  # 変更のあったサービスだけを出し分ける判定をここで作る。手動起動時は入力で決める。
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.decide.outputs.backend }}
+      frontend: ${{ steps.decide.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          TARGET: ${{ inputs.target }}
+          F_BACKEND: ${{ steps.filter.outputs.backend }}
+          F_FRONTEND: ${{ steps.filter.outputs.frontend }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            case "$TARGET" in
+              both)     b=true;  f=true  ;;
+              backend)  b=true;  f=false ;;
+              frontend) b=false; f=true  ;;
+            esac
+          else
+            b="$F_BACKEND"
+            f="$F_FRONTEND"
+          fi
+          echo "backend=$b" >> "$GITHUB_OUTPUT"
+          echo "frontend=$f" >> "$GITHUB_OUTPUT"
+
+  backend:
+    needs: detect
+    if: needs.detect.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ECR_REPO: raisechat-dev-backend # ECR リポジトリ名・ECS サービス名・タスク定義 family は同名
+      ECS_SERVICE: raisechat-dev-backend
+      CONTAINER: raisechat-dev-backend
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push image
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          IMAGE="$REGISTRY/$ECR_REPO"
+          docker build -t "$IMAGE:$TAG" -t "$IMAGE:latest" ./backend
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:latest"
+          echo "image=$IMAGE:$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Render task definition (現行を取得して image だけ差し替え)
+        run: |
+          aws ecs describe-task-definition --task-definition "$ECR_REPO" \
+            --query taskDefinition \
+            | jq 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)' \
+            > taskdef.json
+
+      - name: Fill new image into task definition
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: taskdef.json
+          container-name: ${{ env.CONTAINER }}
+          image: ${{ steps.build.outputs.image }}
+
+      - name: Deploy to ECS (register revision + rolling update)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          service: ${{ env.ECS_SERVICE }}
+          wait-for-service-stability: true
+
+  frontend:
+    needs: detect
+    if: needs.detect.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ECR_REPO: raisechat-dev-frontend
+      ECS_SERVICE: raisechat-dev-frontend
+      CONTAINER: raisechat-dev-frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push image
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          IMAGE="$REGISTRY/$ECR_REPO"
+          docker build -t "$IMAGE:$TAG" -t "$IMAGE:latest" ./frontend
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:latest"
+          echo "image=$IMAGE:$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Render task definition (現行を取得して image だけ差し替え)
+        run: |
+          aws ecs describe-task-definition --task-definition "$ECR_REPO" \
+            --query taskDefinition \
+            | jq 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)' \
+            > taskdef.json
+
+      - name: Fill new image into task definition
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: taskdef.json
+          container-name: ${{ env.CONTAINER }}
+          image: ${{ steps.build.outputs.image }}
+
+      - name: Deploy to ECS (register revision + rolling update)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          service: ${{ env.ECS_SERVICE }}
+          wait-for-service-stability: true
