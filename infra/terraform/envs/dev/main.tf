@@ -74,3 +74,29 @@ module "ecs" {
   frontend_task_cpu        = var.frontend_task_cpu
   frontend_task_memory     = var.frontend_task_memory
 }
+
+# Step 6: CI/CD（GitHub Actions OIDC デプロイ）。
+# GitHub→AWS を OIDC で接続し、main 限定のデプロイロールを発行する。権限は ecs module の
+# output（ECR / ECS サービス / IAM ロール ARN）で「この環境のリソースだけ」に絞る。
+# author-only（apply は ecs と同時）。ワークフロー本体は .github/workflows/deploy.yml。
+module "cicd" {
+  source      = "../../modules/cicd"
+  name_prefix = local.name_prefix
+
+  github_owner  = var.github_owner
+  github_repo   = var.github_repo
+  github_branch = var.github_deploy_branch
+
+  ecr_repository_arns = [
+    module.ecs.backend_ecr_repository_arn,
+    module.ecs.frontend_ecr_repository_arn,
+  ]
+  ecs_service_arns = [
+    module.ecs.ecs_service_arn,
+    module.ecs.frontend_ecs_service_arn,
+  ]
+  ecs_pass_role_arns = [
+    module.ecs.ecs_execution_role_arn,
+    module.ecs.ecs_task_role_arn,
+  ]
+}

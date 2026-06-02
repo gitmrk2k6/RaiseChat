@@ -108,3 +108,9 @@ output "log_group_name" {
   description = "アプリログの CloudWatch Logs グループ名"
   value       = module.ecs.log_group_name
 }
+
+# --- cicd module（Step 6）---------------------------------------------------
+output "deploy_role_arn" {
+  description = "GitHub Actions が OIDC で assume するデプロイロールの ARN（deploy.yml の role-to-assume / repo variable AWS_DEPLOY_ROLE_ARN に設定）"
+  value       = module.cicd.deploy_role_arn
+}
