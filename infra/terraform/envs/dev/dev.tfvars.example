@@ -5,3 +5,10 @@
 project_name = "raisechat"
 environment  = "dev"
 aws_region   = "ap-northeast-1"
+
+# --- network（Step 2）---
+vpc_cidr  = "10.0.0.0/16"
+azs_count = 2
+# NAT Gateway は時間課金。通常は false（validate / 待機中は作らない）。
+# 実際にアプリをデプロイして E2E 検証する apply のときだけ true にする。
+enable_nat_gateway = false
