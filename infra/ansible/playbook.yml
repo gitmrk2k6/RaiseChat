@@ -1,0 +1,9 @@
+---
+# 運用 bastion をプロビジョニングするサイト playbook。
+# 実 bastion へは SSM 経由（community.aws.aws_ssm connection plugin）で接続する。
+# インベントリは inventory/hosts.example を参照（接続変数の例つき）。
+- name: Provision operational bastion
+  hosts: bastion
+  become: true
+  roles:
+    - bastion

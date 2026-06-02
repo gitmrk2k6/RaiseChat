@@ -1,0 +1,21 @@
+---
+# molecule + Docker（amazonlinux:2023）で bastion ロールを検証する。
+# クラウド非依存・無課金。SSM 接続は実 bastion 適用時の話で、ここではロールの
+# converge / idempotence / verify をローカルコンテナで確認する。
+dependency:
+  name: galaxy
+driver:
+  name: docker
+platforms:
+  - name: rc-bastion
+    image: amazonlinux:2023
+    command: sleep infinity
+    tty: true
+    pre_build_image: true
+provisioner:
+  name: ansible
+  # テスト対象ロールの親（roles/）を探索パスに加え、converge から name: bastion で解決する。
+  env:
+    ANSIBLE_ROLES_PATH: ${MOLECULE_PROJECT_DIRECTORY}/..
+verifier:
+  name: ansible

@@ -246,7 +246,9 @@ ECS Fargate は OS 層をユーザーが管理しないため、従来型の「�
 
 ### 8.2 Ansible 題材を確保する選択肢
 
-学習として Ansible を厚く扱いたい場合、**ECS Fargate ではなく EC2 起動型（ECS on EC2 / 素の EC2）** を一部採用すると、OS・ミドルウェアの構成管理という本来の Ansible 題材が生まれる。Fargate と EC2 のどちらを採るかは [§12 未決事項](#12-未決事項--今後検討) で扱う。
+学習として Ansible を厚く扱いたい場合、**ECS Fargate ではなく EC2 起動型（ECS on EC2 / 素の EC2）** を一部採用すると、OS・ミドルウェアの構成管理という本来の Ansible 題材が生まれる。本プロジェクトは §12.1 のとおり **アプリ層は Fargate のまま、運用 bastion EC2 を Ansible 題材**として採る方針で確定した。
+
+> **実装（⑤Step8）**: bastion の「存在」は [`infra/terraform/modules/bastion`](../infra/terraform/modules/bastion/README.md)（EC2 / IAM(SSM) / SG / RDS・Redis 踏み台経路）、「中身」は [`infra/ansible`](../infra/ansible/README.md)（OS 更新・DB/Redis クライアント導入・MOTD の role）。接続は **SSM Session Manager**（インバウンド SSH なし）で、Ansible の実接続は `community.aws.aws_ssm` connection plugin。role は **molecule + Docker**（amazonlinux:2023）で converge / 冪等性 / verify を検証する（クラウド非依存・無課金）。
 
 ---
 

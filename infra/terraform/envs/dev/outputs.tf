@@ -115,6 +115,17 @@ output "deploy_role_arn" {
   value       = module.cicd.deploy_role_arn
 }
 
+# --- bastion module（Step 8）-----------------------------------------------
+output "bastion_instance_id" {
+  description = "運用 bastion の EC2 インスタンス ID（SSM の --target に指定）"
+  value       = module.bastion.bastion_instance_id
+}
+
+output "ssm_start_session_command" {
+  description = "SSM Session Manager で bastion に接続するコマンド（apply 後の運用ヒント）"
+  value       = module.bastion.ssm_start_session_command
+}
+
 # --- monitoring module（Step 7）--------------------------------------------
 output "alerts_sns_topic_arn" {
   description = "アラーム通知先 SNS トピックの ARN（apply 後にメール / Slack 等の購読を手動追加）"

@@ -1,0 +1,38 @@
+---
+# 運用 bastion の OS / ミドルウェア構成。RDS / Redis への踏み台として最低限の
+# クライアントを揃え、タイムゾーンと利用ガイド（MOTD）を整える。すべて冪等。
+
+- name: Set system timezone via /etc/localtime symlink
+  ansible.builtin.file:
+    src: "/usr/share/zoneinfo/{{ bastion_timezone }}"
+    dest: /etc/localtime
+    state: link
+    force: true
+
+# 運用 bastion の基本メンテとして全パッケージを更新する意図的な挙動のため latest を許容。
+- name: Upgrade all installed packages  # noqa: package-latest
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+    update_cache: true
+  when: bastion_upgrade_all | bool
+
+- name: Install operational client packages
+  ansible.builtin.dnf:
+    name: "{{ bastion_packages }}"
+    state: present
+
+- name: Deploy bastion usage MOTD
+  ansible.builtin.copy:
+    dest: /etc/motd
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      ===========================================================
+       RaiseChat 運用 bastion（Ansible 管理 / SSM 接続）
+      -----------------------------------------------------------
+       RDS へ:   psql -h <rds_endpoint> -U <user> -d raisechat
+       Redis へ: redis6-cli -h <redis_endpoint> -p 6379
+       疎通確認: nc -vz <host> <port>
+      ===========================================================

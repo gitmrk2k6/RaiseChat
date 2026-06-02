@@ -1,0 +1,5 @@
+# molecule / Ansible のローカル検証で生成される一時物
+.venv/
+*.retry
+__pycache__/
+.molecule/
