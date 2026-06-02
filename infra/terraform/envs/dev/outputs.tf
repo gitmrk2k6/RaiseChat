@@ -72,3 +72,29 @@ output "redis_port" {
   description = "Redis ポート"
   value       = module.data.redis_port
 }
+
+# --- ecs module（Step 4）----------------------------------------------------
+output "ecr_repository_url" {
+  description = "バックエンドの ECR リポジトリ URL（CI が docker push する先）"
+  value       = module.ecs.ecr_repository_url
+}
+
+output "alb_dns_name" {
+  description = "ALB の DNS 名（E2E の接続先 / Route 53 alias 先）"
+  value       = module.ecs.alb_dns_name
+}
+
+output "ecs_cluster_name" {
+  description = "ECS クラスタ名（CD のサービス更新で指定）"
+  value       = module.ecs.ecs_cluster_name
+}
+
+output "ecs_service_name" {
+  description = "ECS サービス名（CD のサービス更新で指定）"
+  value       = module.ecs.ecs_service_name
+}
+
+output "log_group_name" {
+  description = "アプリログの CloudWatch Logs グループ名"
+  value       = module.ecs.log_group_name
+}

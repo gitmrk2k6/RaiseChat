@@ -60,3 +60,52 @@ variable "redis_num_cache_clusters" {
   type        = number
   default     = 1
 }
+
+# --- ecs module 用 ----------------------------------------------------------
+variable "certificate_arn" {
+  description = "ALB の HTTPS:443 に使う ACM 証明書 ARN。空なら HTTP:80 フォールバック（ドメイン未整備でも E2E 可）"
+  type        = string
+  default     = ""
+}
+
+variable "container_image" {
+  description = "ECS タスクのコンテナイメージ。空なら本スタックの ECR の :latest を使う（push 後に apply）"
+  type        = string
+  default     = ""
+}
+
+variable "ecs_desired_count" {
+  description = "ECS サービスの希望タスク数。§6.1「2 タスク以上」に従い既定 2"
+  type        = number
+  default     = 2
+}
+
+variable "ecs_task_cpu" {
+  description = "ECS タスクの CPU ユニット"
+  type        = number
+  default     = 512
+}
+
+variable "ecs_task_memory" {
+  description = "ECS タスクのメモリ（MiB）"
+  type        = number
+  default     = 1024
+}
+
+variable "s3_bucket" {
+  description = "アバター/添付の S3 バケット名（タスクロールのスコープと S3_BUCKET 環境変数）"
+  type        = string
+  default     = "raisechat-avatars"
+}
+
+variable "ws_allowed_origins" {
+  description = "WS/REST CORS の許可オリジン（WS_ALLOWED_ORIGINS / APP_CORS_ALLOWED_ORIGINS）。空ならアプリ既定"
+  type        = string
+  default     = ""
+}
+
+variable "invite_base_url" {
+  description = "招待リンクのベース URL（INVITE_BASE_URL）。空ならアプリ既定"
+  type        = string
+  default     = ""
+}

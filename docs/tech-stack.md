@@ -98,6 +98,7 @@ RaiseChat で **実際に採用している技術とそのバージョン** を 
 | spring-boot-starter-security | (BOM 準拠) | 認証・認可 |
 | spring-boot-starter-websocket | (BOM 準拠) | WebSocket / STOMP サーバー |
 | spring-boot-starter-data-redis | (BOM 準拠) | Redis 連携（キャッシュ / Pub-Sub）|
+| spring-boot-starter-actuator | (BOM 準拠) | ヘルスチェック（`/actuator/health`）。ALB のターゲットヘルスチェックに使う（infrastructure.md §9）|
 | JJWT (jjwt-api/impl/jackson) | 0.12.6 | JWT の発行・検証 |
 | AWS SDK for Java v2 (s3) | BOM 2.45.1 | S3 連携（アバター・添付）|
 | Flyway (core + database-postgresql) | (BOM 準拠) | DB マイグレーション |

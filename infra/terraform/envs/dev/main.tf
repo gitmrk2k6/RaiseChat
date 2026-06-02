@@ -37,3 +37,33 @@ module "data" {
   redis_node_type          = var.redis_node_type
   redis_num_cache_clusters = var.redis_num_cache_clusters
 }
+
+# Step 4: アプリ実行基盤（ECR / ALB / ECS Fargate / CloudWatch Logs / IAM / シークレット）。
+# network（public/private subnet・alb_sg・ecs_sg）と data（DB シークレット・Redis）の出力を配線する。
+# ALB の TLS は certificate_arn のトグル（未指定なら HTTP:80 フォールバック）。author-only（apply は E2E 時のみ）。
+module "ecs" {
+  source      = "../../modules/ecs"
+  name_prefix = local.name_prefix
+
+  vpc_id             = module.network.vpc_id
+  public_subnet_ids  = module.network.public_subnet_ids
+  private_subnet_ids = module.network.private_subnet_ids
+  alb_sg_id          = module.network.alb_sg_id
+  ecs_sg_id          = module.network.ecs_sg_id
+
+  db_endpoint_host          = module.data.db_instance_address
+  db_port                   = module.data.db_instance_port
+  db_name                   = module.data.db_name
+  db_master_user_secret_arn = module.data.db_master_user_secret_arn
+  redis_host                = module.data.redis_primary_endpoint_address
+  redis_port                = module.data.redis_port
+
+  certificate_arn    = var.certificate_arn
+  container_image    = var.container_image
+  desired_count      = var.ecs_desired_count
+  task_cpu           = var.ecs_task_cpu
+  task_memory        = var.ecs_task_memory
+  s3_bucket          = var.s3_bucket
+  ws_allowed_origins = var.ws_allowed_origins
+  invite_base_url    = var.invite_base_url
+}
