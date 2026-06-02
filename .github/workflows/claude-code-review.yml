@@ -1,7 +1,12 @@
 # Claude Code 自動コードレビュー（フェーズ④）
 #
-# PR が開かれる / 更新されるたびに、Claude Code が差分をレビューしコメントを投稿する品質ゲート。
+# Claude Code が PR の差分をレビューしコメントを投稿する品質ゲート。
 # 公式 GA アクション anthropics/claude-code-action@v1 を code-review プラグインで利用する。
+#
+# 【手動（オンデマンド）起動】PR に `review` ラベルを付けたときだけ走る。
+#   - 普段の PR 作成・push では走らない（Pro サブスク枠の消費を絞るため）。
+#   - レビューしたい PR に `review` ラベルを付与 → 起動。
+#   - 再レビューしたいときは、ラベルを一度外して付け直す（labeled イベントが再発火する）。
 #
 # 前提（リポジトリ admin による事前作業。未整備だとジョブは失敗する）:
 #   1. Claude GitHub App をインストール: https://github.com/apps/claude
@@ -9,6 +14,7 @@
 #      (Settings -> Secrets and variables -> Actions)
 #      トークンは `claude setup-token` で発行。Claude サブスク（Pro/Max）枠で動くため
 #      従量課金の API キー（ANTHROPIC_API_KEY）は不要。
+#   3. `review` ラベルを作成しておく（起動キー）。
 #
 # レビュー観点・命名規則・GitHub フローはリポジトリ直下の CLAUDE.md を自動参照する。
 # デプロイ用ワークフロー（フェーズ⑤・マージ後 main で起動）は別ファイルで共存させる。
@@ -17,9 +23,9 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [labeled]
 
-# 同一 PR で push が続いたときは古い実行をキャンセルし、API コストと実行時間を抑える。
+# 同一 PR で連続してラベルを付け直したとき、古い実行をキャンセルしてコストと時間を抑える。
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -32,6 +38,8 @@ permissions:
 
 jobs:
   review:
+    # `review` ラベルが付いたときだけ実行する（他のラベル付与では走らない）。
+    if: github.event.label.name == 'review'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
