@@ -1,0 +1,9 @@
+---
+# Ansible 実行に必要な Galaxy コレクション。
+#   ansible-galaxy collection install -r requirements.yml
+collections:
+  # 実 bastion へ SSM 経由で接続するための connection plugin（community.aws.aws_ssm）。
+  - name: amazon.aws
+  - name: community.aws
+  # molecule の Docker ドライバが利用する（ローカル検証用）。
+  - name: community.docker

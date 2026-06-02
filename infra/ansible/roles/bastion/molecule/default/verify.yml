@@ -1,0 +1,31 @@
+---
+# ロール適用後の状態を確認する。クライアントが導入され MOTD と TZ が整っていること。
+- name: Verify
+  hosts: all
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Operational client binaries are present
+      ansible.builtin.command: "command -v {{ item }}"
+      changed_when: false
+      loop:
+        - psql
+        - redis6-cli
+        - nc
+        - jq
+
+    - name: MOTD contains the RaiseChat marker
+      ansible.builtin.command: grep -q RaiseChat /etc/motd
+      changed_when: false
+
+    - name: Timezone is linked to Asia/Tokyo
+      ansible.builtin.stat:
+        path: /etc/localtime
+      register: bastion_localtime_stat
+
+    - name: Assert timezone link points to Asia/Tokyo
+      ansible.builtin.assert:
+        that:
+          - bastion_localtime_stat.stat.islnk | default(false)
+          - "'Asia/Tokyo' in bastion_localtime_stat.stat.lnk_target"
+        fail_msg: "/etc/localtime が Asia/Tokyo を指していない"

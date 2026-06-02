@@ -1,0 +1,9 @@
+---
+# コンテナはそのまま root で動くため become は使わない（sudo 非依存）。
+- name: Converge
+  hosts: all
+  become: false
+  tasks:
+    - name: Include bastion role
+      ansible.builtin.include_role:
+        name: bastion

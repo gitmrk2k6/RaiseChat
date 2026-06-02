@@ -1,0 +1,16 @@
+---
+# bastion ロールの既定値。呼び出し側 / インベントリで上書き可能。
+
+# システムタイムゾーン（timedatectl ではなく /etc/localtime のリンクで設定＝コンテナでも可）。
+bastion_timezone: Asia/Tokyo
+
+# インストール済みパッケージを最新へ更新するか（運用 bastion の基本メンテ）。
+bastion_upgrade_all: true
+
+# 踏み台運用で使うクライアント / ユーティリティ（Amazon Linux 2023 のパッケージ名）。
+#   postgresql15 = psql / redis6 = redis-cli / nmap-ncat = nc / jq
+bastion_packages:
+  - postgresql15
+  - redis6
+  - nmap-ncat
+  - jq

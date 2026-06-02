@@ -1,0 +1,15 @@
+# 実 bastion へ SSM 経由で接続するインベントリ例（SSH を開けないため aws_ssm を使う）。
+# <...> を Terraform の output（bastion_instance_id 等）で置き換えて hosts として使う。
+#
+# 前提:
+#   - AWS CLI / Session Manager plugin がローカルに入っていること
+#   - aws_ssm はファイル転送に S3 バケットを使うため、転送用バケットを 1 つ用意すること
+#   - ansible-galaxy collection install -r requirements.yml 済み
+
+[bastion]
+rc-bastion ansible_aws_ssm_instance_id=<instance_id>
+
+[bastion:vars]
+ansible_connection=community.aws.aws_ssm
+ansible_aws_ssm_region=ap-northeast-1
+ansible_aws_ssm_bucket_name=<ssm-file-transfer-bucket>

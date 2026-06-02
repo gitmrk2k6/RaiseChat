@@ -101,6 +101,22 @@ module "cicd" {
   ]
 }
 
+# Step 8: 運用 bastion（Ansible プロビジョニングの題材 ＋ RDS/Redis への踏み台）。
+# network（VPC / public subnet / RDS・Redis SG）と data（DB/Redis ポート）を配線する。
+# 接続は SSM Session Manager（インバウンド SSH なし）。author-only（apply は運用時のみ）。
+module "bastion" {
+  source      = "../../modules/bastion"
+  name_prefix = local.name_prefix
+
+  vpc_id           = module.network.vpc_id
+  public_subnet_id = module.network.public_subnet_ids[0]
+  rds_sg_id        = module.network.rds_sg_id
+  redis_sg_id      = module.network.redis_sg_id
+
+  db_port    = module.data.db_instance_port
+  redis_port = module.data.redis_port
+}
+
 # Step 7: 監視（CloudWatch アラーム / ダッシュボード / SNS 通知トピック）。
 # ecs module の output（クラスタ名・サービス名・ALB/TG の ARN suffix）と desired count を
 # 配線する。SNS の購読は apply 後に手動追加（infrastructure.md §9）。author-only。
