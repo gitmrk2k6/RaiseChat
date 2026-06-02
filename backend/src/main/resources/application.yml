@@ -50,6 +50,10 @@ app:
     dm-prefix: "messages:dm:"
     thread-prefix: "messages:thread:"
     notification-prefix: "notifications:"
+    # presence（オンライン状態）の Redis pub/sub チャンネル。ユーザー単位グローバルなので 1 本。
+    presence-channel: "presence:changed"
+    # presence の状態キー接頭辞。presence:user:{userId} を Set にしてセッションIDを参照カウントで持つ。
+    presence-key-prefix: "presence:user:"
   invite:
     # 招待リンクのベース URL。発行レスポンスの inviteUrl を「base-url/{token}」で組み立てる。
     base-url: ${INVITE_BASE_URL:http://localhost:3000/invite}

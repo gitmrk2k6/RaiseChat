@@ -185,6 +185,20 @@ export interface NotificationEventDto {
   mentionCount: number;
 }
 
+/** GET /api/presence のレスポンス。現在オンラインなユーザーの数値 id 一覧（seed 用）。 */
+export interface PresenceResponseDto {
+  userIds: number[];
+}
+
+/**
+ * WS /topic/presence で配信される presence 変化イベント（PresenceEvent）。
+ * userId は数値 id（自分判定・突き合わせに使う）、online=true でオンライン / false でオフライン。
+ */
+export interface PresenceEventDto {
+  userId: number;
+  online: boolean;
+}
+
 /** PATCH /api/messages/{id} のリクエストボディ（EditMessageRequest）。 */
 export interface EditMessageRequest {
   body: string;
