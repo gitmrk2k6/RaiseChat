@@ -3,6 +3,7 @@ package com.raisechat.config;
 import com.raisechat.message.ws.MessageChannelRedisSubscriber;
 import com.raisechat.message.ws.MessageDmRedisSubscriber;
 import com.raisechat.message.ws.MessageThreadRedisSubscriber;
+import com.raisechat.message.ws.TypingRedisSubscriber;
 import com.raisechat.notification.ws.NotificationRedisSubscriber;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -27,6 +28,9 @@ public class RedisConfig {
     @Value("${app.redis.notification-prefix:notifications:}")
     private String notificationPrefix;
 
+    @Value("${app.redis.typing-prefix:typing:}")
+    private String typingPrefix;
+
     @Bean
     public StringRedisTemplate stringRedisTemplate(RedisConnectionFactory factory) {
         return new StringRedisTemplate(factory);
@@ -38,7 +42,8 @@ public class RedisConfig {
             MessageChannelRedisSubscriber channelSubscriber,
             MessageDmRedisSubscriber dmSubscriber,
             MessageThreadRedisSubscriber threadSubscriber,
-            NotificationRedisSubscriber notificationSubscriber
+            NotificationRedisSubscriber notificationSubscriber,
+            TypingRedisSubscriber typingSubscriber
     ) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(factory);
@@ -46,6 +51,7 @@ public class RedisConfig {
         container.addMessageListener(dmSubscriber, new PatternTopic(dmPrefix + "*"));
         container.addMessageListener(threadSubscriber, new PatternTopic(threadPrefix + "*"));
         container.addMessageListener(notificationSubscriber, new PatternTopic(notificationPrefix + "*"));
+        container.addMessageListener(typingSubscriber, new PatternTopic(typingPrefix + "*"));
         return container;
     }
 }

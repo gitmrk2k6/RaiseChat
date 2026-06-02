@@ -26,10 +26,14 @@ import {
   messageCreatedToMessage,
   parseWsEvent,
   publishChannelMessage,
+  publishChannelTyping,
 } from "@/lib/ws/messages";
+import { useTypingNotifier } from "@/lib/ws/useTypingNotifier";
+import { useTypingIndicator } from "@/lib/ws/useTypingIndicator";
 import { ChannelHeader } from "@/components/chat/ChannelHeader";
 import { MessageList } from "@/components/chat/MessageList";
 import { MessageInput } from "@/components/chat/MessageInput";
+import { TypingIndicator } from "@/components/chat/TypingIndicator";
 import { ThreadPanel } from "@/components/chat/ThreadPanel";
 import type { Message } from "@/types";
 
@@ -258,6 +262,10 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
     publishChannelMessage(params.channelId, body);
   };
 
+  // typing: 入力中の送信（throttle）と、他メンバーの「入力中…」受信。
+  const notifyTyping = useTypingNotifier(() => publishChannelTyping(params.channelId));
+  const typers = useTypingIndicator(`/topic/channels/${params.channelId}/typing`, meId);
+
   // トップレベルメッセージの編集/削除/リアクションは REST に投げるだけ。state 反映は WS 受信で行う。
   const toggleReact = (id: string, emoji: string) => {
     if (!meId) return;
@@ -326,7 +334,12 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
             highlightMessageId={jumpMessageId}
           />
         )}
-        <MessageInput placeholder={`#${channel.name} へのメッセージ`} onSend={send} />
+        <TypingIndicator typers={typers} />
+        <MessageInput
+          placeholder={`#${channel.name} へのメッセージ`}
+          onSend={send}
+          onTyping={notifyTyping}
+        />
       </div>
       {parent && (
         <ThreadPanel

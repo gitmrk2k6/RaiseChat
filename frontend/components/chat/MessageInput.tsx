@@ -8,15 +8,19 @@ import { Avatar } from "@/components/ui/Avatar";
 interface Props {
   placeholder: string;
   onSend: (body: string) => void;
+  /** 入力中（typing）通知。打鍵のたびに呼ぶ（throttle は呼び出し側の責務）。 */
+  onTyping?: () => void;
 }
 
-export function MessageInput({ placeholder, onSend }: Props) {
+export function MessageInput({ placeholder, onSend, onTyping }: Props) {
   const [value, setValue] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleChange = (v: string) => {
     setValue(v);
+    // 入力が増えたときだけ typing を通知する（全選択削除や貼り付け直後の空化では送らない）。
+    if (v.length > 0) onTyping?.();
     // メンションサジェスト判定
     const match = v.match(/(^|\s)@(\w*)$/);
     setMentionQuery(match ? match[2] : null);
