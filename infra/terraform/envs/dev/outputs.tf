@@ -114,3 +114,14 @@ output "deploy_role_arn" {
   description = "GitHub Actions が OIDC で assume するデプロイロールの ARN（deploy.yml の role-to-assume / repo variable AWS_DEPLOY_ROLE_ARN に設定）"
   value       = module.cicd.deploy_role_arn
 }
+
+# --- monitoring module（Step 7）--------------------------------------------
+output "alerts_sns_topic_arn" {
+  description = "アラーム通知先 SNS トピックの ARN（apply 後にメール / Slack 等の購読を手動追加）"
+  value       = module.monitoring.sns_topic_arn
+}
+
+output "dashboard_name" {
+  description = "CloudWatch ダッシュボード名（CloudWatch > Dashboards で開く）"
+  value       = module.monitoring.dashboard_name
+}
