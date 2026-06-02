@@ -5,8 +5,10 @@
 #
 # 前提（リポジトリ admin による事前作業。未整備だとジョブは失敗する）:
 #   1. Claude GitHub App をインストール: https://github.com/apps/claude
-#   2. Repository secret `ANTHROPIC_API_KEY` を追加
+#   2. Repository secret `CLAUDE_CODE_OAUTH_TOKEN` を追加
 #      (Settings -> Secrets and variables -> Actions)
+#      トークンは `claude setup-token` で発行。Claude サブスク（Pro/Max）枠で動くため
+#      従量課金の API キー（ANTHROPIC_API_KEY）は不要。
 #
 # レビュー観点・命名規則・GitHub フローはリポジトリ直下の CLAUDE.md を自動参照する。
 # デプロイ用ワークフロー（フェーズ⑤・マージ後 main で起動）は別ファイルで共存させる。
@@ -39,7 +41,7 @@ jobs:
       - name: Claude Code review
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
           plugins: "code-review@claude-code-plugins"
           prompt: "/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
