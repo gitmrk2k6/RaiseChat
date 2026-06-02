@@ -162,14 +162,14 @@ RaiseChat で **実際に採用している技術とそのバージョン** を 
 
 ## 8. インフラ・デプロイ
 
-本書のスコープ外。後続のインフラ設計で確定する。
+本書のスコープ外。方針は [インフラ設計書](infrastructure.md) で確定済み（具体的な IaC / パイプライン / Playbook は実装フェーズで詰める）。
 
 | 項目 | 状態 |
 | --- | --- |
-| ホスティング（AWS / Render 等）| 🔜 インフラ設計で決定 |
-| 冗長化構成（バックエンド複数台）| 🔜 インフラ設計で決定（Redis Pub-Sub 前提は [realtime-design.md](realtime-design.md) に既述）|
-| 自動デプロイ / CI/CD | 🔜 インフラ設計で決定 |
-| 構成管理（Ansible 等）| 🔜 インフラ設計で決定 |
+| ホスティング | ✅ AWS（[infrastructure.md](infrastructure.md)）|
+| 冗長化構成（バックエンド複数台）| ✅ ECS Fargate 複数タスク + Redis Pub-Sub（[infrastructure.md §6](infrastructure.md) / [realtime-design.md](realtime-design.md)）|
+| 自動デプロイ / CI/CD | ✅ GitHub Actions → ECR → ECS（方針確定。[infrastructure.md §7](infrastructure.md)）|
+| 構成管理（Ansible 等）| ✅ 適用範囲を確定（[infrastructure.md §8](infrastructure.md)）|
 
 ---
 

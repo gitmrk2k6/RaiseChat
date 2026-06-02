@@ -32,8 +32,8 @@ RaiseTech AI エンジニアコース **上級編** 学習課題として作成�
 | [機能要件書](functional-requirements.md) | F-XX 機能定義・バリデーション・ユースケース | ✅ 作成済み |
 | `docs/screen-design.md` | 画面一覧・ワイヤーフレーム・画面遷移図 | ⏳ 設計フェーズで作成 |
 | [データベース設計書](database-design.md) | ER 図・テーブル定義・インデックス | ✅ 作成済み |
-| `docs/tech-stack.md` | 採用技術・選定理由 | ⏳ 設計フェーズで作成 |
-| `docs/infrastructure.md` | AWS / Render 等の構成図・ネットワーク | ⏳ 設計フェーズで作成 |
+| [技術スタック設計書](tech-stack.md) | 採用技術・選定理由 | ✅ 作成済み |
+| [インフラ設計書](infrastructure.md) | AWS 構成図・ネットワーク・冗長化 | ✅ 作成済み |
 | `docs/realtime-design.md` | WebSocket / STOMP / Redis Pub-Sub 設計 | ⏳ 設計フェーズで作成 |
 | `docs/cache-strategy.md` | Redis によるキャッシュ戦略・TTL 設計 | ⏳ 設計フェーズで作成 |
 
@@ -115,7 +115,7 @@ Java / Spring Boot + Next.js (React) + PostgreSQL + Redis + WebSocket（STOMP）
 
 ## 8. インフラ構成（概要）
 
-AWS（ECS Fargate + ElastiCache for Redis + RDS + ALB + S3 + CloudFront 等）または Render を候補とする。Ansible によるプロビジョニングの題材としてもどちらが適するかを含め、**設計フェーズ〜実装フェーズで `docs/infrastructure.md` を作成** する。
+本番インフラは **AWS** 上に構築する（ECS Fargate + ElastiCache for Redis + RDS + ALB + S3 + CloudFront 等）。構成図・ネットワーク・冗長化・CI/CD・構成管理（Ansible）の方針は **[インフラ設計書](infrastructure.md)** で確定済み。具体的な IaC / パイプライン / Playbook は実装フェーズで詰める。
 
 ---
 
