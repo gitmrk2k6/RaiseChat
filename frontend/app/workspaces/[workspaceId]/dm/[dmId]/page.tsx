@@ -23,9 +23,13 @@ import {
   messageCreatedToMessage,
   parseWsEvent,
   publishDmMessage,
+  publishDmTyping,
 } from "@/lib/ws/messages";
+import { useTypingNotifier } from "@/lib/ws/useTypingNotifier";
+import { useTypingIndicator } from "@/lib/ws/useTypingIndicator";
 import { MessageList } from "@/components/chat/MessageList";
 import { MessageInput } from "@/components/chat/MessageInput";
+import { TypingIndicator } from "@/components/chat/TypingIndicator";
 import { Avatar } from "@/components/ui/Avatar";
 import type { Message } from "@/types";
 
@@ -151,6 +155,10 @@ export default function DmPage({
     publishDmMessage(params.dmId, body);
   };
 
+  // typing: 入力中の送信（throttle）と、相手の「入力中…」受信。
+  const notifyTyping = useTypingNotifier(() => publishDmTyping(params.dmId));
+  const typers = useTypingIndicator(`/topic/dm/${params.dmId}/typing`, meId);
+
   // 編集/削除/リアクションは REST に投げるだけ。state 反映は WS 受信で行う（楽観更新なし）。
   const toggleReact = (id: string, emoji: string) => {
     if (!meId) return;
@@ -208,7 +216,12 @@ export default function DmPage({
           highlightMessageId={jumpMessageId}
         />
       )}
-      <MessageInput placeholder={`${partnerName} へのメッセージ`} onSend={send} />
+      <TypingIndicator typers={typers} />
+      <MessageInput
+        placeholder={`${partnerName} へのメッセージ`}
+        onSend={send}
+        onTyping={notifyTyping}
+      />
     </div>
   );
 }

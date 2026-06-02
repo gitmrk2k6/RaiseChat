@@ -106,6 +106,42 @@ export function publishChannelMessage(
   });
 }
 
+/**
+ * typing（入力中）イベント。短命・揮発なため永続化されず、受信側はタイマーで消す。
+ * userId は数値 id（受信側で自分を除外するのに使う）、displayName は「○○ が入力中…」表示用。
+ */
+export interface TypingEvent {
+  userId: number;
+  displayName: string;
+}
+
+/** /topic 配下の typing フレーム（…/typing）をパースする。失敗時は null。 */
+export function parseTypingEvent(body: string): TypingEvent | null {
+  try {
+    const e = JSON.parse(body) as TypingEvent;
+    if (typeof e.userId !== "number" || typeof e.displayName !== "string") return null;
+    return e;
+  } catch {
+    return null;
+  }
+}
+
+/** チャンネルで入力中であることを送信する（/app/channels/{id}/typing、ボディ不要）。 */
+export function publishChannelTyping(channelId: string): void {
+  getStompClient().publish({
+    destination: `/app/channels/${Number(channelId)}/typing`,
+    body: "",
+  });
+}
+
+/** DM ルームで入力中であることを送信する（/app/dm/{roomId}/typing、ボディ不要）。 */
+export function publishDmTyping(roomId: string): void {
+  getStompClient().publish({
+    destination: `/app/dm/${Number(roomId)}/typing`,
+    body: "",
+  });
+}
+
 /** DM ルームへ新規メッセージを送信する（/app/dm/{roomId}/messages）。 */
 export function publishDmMessage(
   roomId: string,
