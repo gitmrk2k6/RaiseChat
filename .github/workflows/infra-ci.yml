@@ -1,0 +1,104 @@
+# Infra CI ゲート（フェーズ⑤Step9 / infrastructure.md §7・§8）
+#
+# IaC（Terraform modules / Ansible role）を PR 時に無課金で検証する第3のゲート。
+# 品質ゲート（claude-code-review.yml）・デプロイ（deploy.yml）とは別ワークフローとして共存させる。
+#
+# 【検証内容】実 AWS には触れない（apply しない）。
+#   - terraform: fmt（整形）/ validate（構文・型）/ tflint（静的解析・AWS ルール）
+#   - ansible:   ansible-lint（規約）/ molecule（amazonlinux:2023 コンテナでロール冪等性まで）
+#
+# 【スコープ外】実リソースを作る terraform plan/apply（課金・AWS 認証が必要）、
+#   実 bastion への Ansible 適用（SSM 接続・運用時のみ）。これらは CI では行わない。
+
+name: Infra CI
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra-ci.yml"
+  workflow_dispatch:
+
+# 同一 PR の連続 push では古い実行をキャンセルして時間を節約する。
+concurrency:
+  group: infra-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# リポジトリ内容の読み取りのみで足りる（AWS にも外部にも書き込まない）。
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # 各スタックを --chdir で解析するため、共有設定は絶対パスで渡す。
+      TFLINT_CONFIG_FILE: ${{ github.workspace }}/infra/terraform/.tflint.hcl
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false # validate の出力をそのまま扱う
+
+      # 整形崩れを最初に弾く（差分があれば失敗）。
+      - name: terraform fmt
+        run: terraform fmt -check -recursive infra/terraform
+
+      # backend（S3）に触れず構文・型・プロバイダ整合だけ検査する。
+      - name: terraform validate (bootstrap)
+        working-directory: infra/terraform/bootstrap
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: terraform validate (envs/dev)
+        working-directory: infra/terraform/envs/dev
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: latest
+
+      # AWS ルールセットプラグインを取得（.tflint.hcl の定義に従う）。
+      - name: tflint --init
+        run: tflint --init
+
+      - name: tflint (bootstrap)
+        run: tflint --chdir=infra/terraform/bootstrap
+
+      - name: tflint (envs/dev)
+        run: tflint --chdir=infra/terraform/envs/dev
+
+  ansible:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: infra/ansible
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # molecule（Docker ドライバ）・ansible-lint・ansible 本体を導入。
+      - name: Install Ansible toolchain
+        run: |
+          python -m pip install --upgrade pip
+          pip install "ansible-core" "ansible-lint" "molecule" "molecule-plugins[docker]" "docker"
+          ansible-galaxy collection install -r requirements.yml
+
+      - name: ansible-lint
+        run: ansible-lint
+
+      # amazonlinux:2023 コンテナへロールを適用し、converge→冪等性→verify まで検証する。
+      # ubuntu-latest ランナーには Docker が同梱されているため追加セットアップ不要。
+      - name: molecule test
+        working-directory: infra/ansible/roles/bastion
+        run: molecule test
