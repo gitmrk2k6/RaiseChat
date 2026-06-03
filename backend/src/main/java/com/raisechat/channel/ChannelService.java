@@ -316,7 +316,12 @@ public class ChannelService {
         for (Long targetUserId : userIds.stream().distinct().toList()) {
             // 追加対象はワークスペースメンバーであることが前提（非メンバーは 403）。
             requireWorkspaceMember(workspaceId, targetUserId);
-            addAsChannelMember(channel, targetUserId);
+            boolean added = addAsChannelMember(channel, targetUserId);
+            // 新規にメンバー化した対象（自分以外）へ channelAdded を配信し、
+            // 追加された側のサイドバーへリロード無しで即時反映する（キック channelRemoved と対称）。
+            if (added && !targetUserId.equals(actorUserId)) {
+                notificationPublisher.publish(targetUserId, NotificationEvent.channelAdded(channelId));
+            }
         }
 
         return ChannelResponse.from(channel);
@@ -397,14 +402,24 @@ public class ChannelService {
     }
 
     // チャンネルへメンバーとして参加。過去に退出した行があれば left_at をクリアして再参加。
-    private void addAsChannelMember(Channel channel, Long userId) {
-        channelMemberRepository.findByChannelIdAndUserId(channel.getId(), userId)
-                .ifPresentOrElse(existing -> existing.setLeftAt(null), () -> {
-                    ChannelMember member = new ChannelMember();
-                    member.setChannel(channel);
-                    member.setUser(userRepository.getReferenceById(userId));
-                    channelMemberRepository.save(member);
-                });
+    // 戻り値はメンバーシップが「非アクティブ→アクティブ」へ実際に遷移したか（新規 INSERT / 再参加なら true、
+    // 既にアクティブメンバーなら no-op の false）。通知の二重配信を避けるため呼び出し側で利用する。
+    private boolean addAsChannelMember(Channel channel, Long userId) {
+        ChannelMember existing = channelMemberRepository
+                .findByChannelIdAndUserId(channel.getId(), userId)
+                .orElse(null);
+        if (existing != null) {
+            if (existing.getLeftAt() == null) {
+                return false; // 既にアクティブメンバー（冪等 no-op）
+            }
+            existing.setLeftAt(null); // 退出履歴を消して再参加
+            return true;
+        }
+        ChannelMember member = new ChannelMember();
+        member.setChannel(channel);
+        member.setUser(userRepository.getReferenceById(userId));
+        channelMemberRepository.save(member);
+        return true;
     }
 
     private void requireWorkspaceMember(Long workspaceId, Long userId) {

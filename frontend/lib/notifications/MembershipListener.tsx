@@ -94,6 +94,16 @@ export function MembershipListener() {
         showBanner("チャンネルが削除されました");
         return;
       }
+
+      if (event.type === "CHANNEL_ADDED") {
+        const channelId = String(event.scopeId);
+        // リダイレクトは伴わない。サイドバー/レール（"workspaces" 配下）と、当該チャンネルの
+        // メンバー一覧キャッシュを無効化して、リロード無しで新チャンネルとメンバー数を反映する。
+        queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.channelMembers(channelId) });
+        showBanner("チャンネルに追加されました");
+        return;
+      }
       // 未読系（UNREAD_*）は NotificationContext が処理するため無視。
     },
     [queryClient, router, showBanner],

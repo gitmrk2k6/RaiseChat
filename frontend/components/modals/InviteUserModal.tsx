@@ -40,8 +40,12 @@ export function InviteUserModal({
   const mutation = useMutation({
     mutationFn: () => addChannelMembers(channel.id, selected),
     onSuccess: async () => {
-      // 追加された側のサイドバーは次回読み込みで反映される。操作者側の一覧も一応最新化しておく。
-      await queryClient.invalidateQueries({ queryKey: queryKeys.channels(channel.workspaceId) });
+      // 追加された側のサイドバーは CHANNEL_ADDED の WS 通知で即時反映される。
+      // 操作者側のチャンネル一覧と、ヘッダのメンバー数バッジ（channelMembers）も最新化する。
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.channels(channel.workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.channelMembers(channel.id) }),
+      ]);
       setSelected([]);
       setError(null);
       onClose();

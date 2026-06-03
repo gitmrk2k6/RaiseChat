@@ -194,13 +194,17 @@ export interface UnreadResponseDto {
  * - 剥奪系（WORKSPACE_REMOVED / CHANNEL_REMOVED, F-16）: 対象 WS / チャンネルから外れた通知。
  *   scopeType は "workspace" | "channel"、unreadCount / mentionCount は 0。MembershipListener が
  *   キャッシュ無効化・リダイレクトに用いる。
+ * - 追加系（CHANNEL_ADDED）: チャンネルへ直接追加された通知（CHANNEL_REMOVED と対称）。
+ *   scopeType は "channel"、unreadCount / mentionCount は 0。MembershipListener が
+ *   キャッシュ無効化（サイドバー反映）に用いる。
  */
 export interface NotificationEventDto {
   type:
     | "UNREAD_UPDATED"
     | "UNREAD_CLEARED"
     | "WORKSPACE_REMOVED"
-    | "CHANNEL_REMOVED";
+    | "CHANNEL_REMOVED"
+    | "CHANNEL_ADDED";
   scopeType: "channel" | "dm" | "workspace";
   scopeId: number;
   unreadCount: number;
