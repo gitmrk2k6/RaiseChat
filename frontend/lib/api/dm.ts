@@ -34,3 +34,18 @@ export async function listDmRooms(workspaceId: string): Promise<DmRoom[]> {
   );
   return page.items.map(toDmRoom);
 }
+
+/**
+ * POST /api/workspaces/{wsId}/dm/rooms 相手との DM ルームを作成または取得する。
+ * 既存ルームがあれば 200、新規なら 201 だがレスポンス形は同じ（冪等）。
+ */
+export async function createDmRoom(
+  workspaceId: string,
+  partnerUserId: string,
+): Promise<DmRoom> {
+  const dto = await api.post<DmRoomDto>(
+    `/api/workspaces/${Number(workspaceId)}/dm/rooms`,
+    { partnerUserId: Number(partnerUserId) },
+  );
+  return toDmRoom(dto);
+}
