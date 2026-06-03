@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Plus } from "lucide-react";
@@ -7,10 +8,12 @@ import { useQuery } from "@tanstack/react-query";
 import { listWorkspaces } from "@/lib/api/workspaces";
 import { queryKeys } from "@/lib/api/queryKeys";
 import { cn } from "@/lib/utils";
+import { CreateWorkspaceModal } from "@/components/modals/CreateWorkspaceModal";
 
 export function WorkspaceRail() {
   const params = useParams<{ workspaceId?: string }>();
   const activeId = params.workspaceId;
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: workspaces = [] } = useQuery({
     queryKey: queryKeys.workspaces,
@@ -37,11 +40,14 @@ export function WorkspaceRail() {
         );
       })}
       <button
+        onClick={() => setCreateOpen(true)}
         className="w-10 h-10 rounded-lg flex items-center justify-center text-white/70 hover:text-white bg-white/10 hover:bg-white/20"
-        title="ワークスペース追加（未実装）"
+        title="ワークスペースを追加"
       >
         <Plus size={20} />
       </button>
+
+      <CreateWorkspaceModal open={createOpen} onClose={() => setCreateOpen(false)} />
     </nav>
   );
 }
