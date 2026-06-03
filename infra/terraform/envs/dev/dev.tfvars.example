@@ -26,12 +26,14 @@ redis_num_cache_clusters = 1
 # private の ECS が ECR/Logs へ出るため、E2E のときは network の enable_nat_gateway=true も併用する。
 # certificate_arn 未指定なら HTTP:80 フォールバック。ドメイン/ACM を整備したら 443 終端に切替。
 certificate_arn = ""
+# Fargate の CPU アーキ。push するイメージのビルド先と一致させる（Apple Silicon は ARM64）。
+cpu_architecture = "ARM64"
 # container_image 未指定なら ECR の :latest を使う（先に docker push してから apply）。
 container_image   = ""
 ecs_desired_count = 2
 ecs_task_cpu      = 512
 ecs_task_memory   = 1024
-s3_bucket         = "raisechat-avatars"
+# S3 バケット名・公開 URL は modules/storage が自動命名（${name_prefix}-storage-<account_id>）。tfvars 指定不要。
 # 単一 ALB の同一オリジン配信なら CORS は不要。別オリジンにする場合のみフロントのドメインを渡す。
 ws_allowed_origins = ""
 invite_base_url    = ""

@@ -117,10 +117,15 @@ variable "frontend_task_memory" {
   default     = 512
 }
 
-variable "s3_bucket" {
-  description = "アバター/添付の S3 バケット名（タスクロールのスコープと S3_BUCKET 環境変数）"
+# S3 バケット名・公開 URL は modules/storage が所有し ecs に配線するため、ここでは変数を持たない。
+
+variable "cpu_architecture" {
+  description = <<-EOT
+    Fargate の CPU アーキテクチャ（X86_64 / ARM64）。push するイメージのビルド先と一致させる。
+    Apple Silicon でネイティブビルドして push するため既定 ARM64（exec format error 回避・Graviton で安価）。
+  EOT
   type        = string
-  default     = "raisechat-avatars"
+  default     = "ARM64"
 }
 
 variable "ws_allowed_origins" {

@@ -39,6 +39,14 @@ module "data" {
   redis_num_cache_clusters = var.redis_num_cache_clusters
 }
 
+# storage: アプリ用 S3 バケット（アバター F-02 / 添付 F-10）。
+# バケット本体を Terraform 管理化し、ecs に bucket_name / public_base_url を配線する。
+# force_destroy=true なので destroy でオブジェクトごと消え、全クリーンアップを保証する。
+module "storage" {
+  source      = "../../modules/storage"
+  name_prefix = local.name_prefix
+}
+
 # Step 4: アプリ実行基盤（ECR / ALB / ECS Fargate / CloudWatch Logs / IAM / シークレット）。
 # network（public/private subnet・alb_sg・ecs_sg）と data（DB シークレット・Redis）の出力を配線する。
 # ALB の TLS は certificate_arn のトグル（未指定なら HTTP:80 フォールバック）。author-only（apply は E2E 時のみ）。
@@ -60,11 +68,13 @@ module "ecs" {
   redis_port                = module.data.redis_port
 
   certificate_arn    = var.certificate_arn
+  cpu_architecture   = var.cpu_architecture
   container_image    = var.container_image
   desired_count      = var.ecs_desired_count
   task_cpu           = var.ecs_task_cpu
   task_memory        = var.ecs_task_memory
-  s3_bucket          = var.s3_bucket
+  s3_bucket          = module.storage.bucket_name
+  s3_public_base_url = module.storage.public_base_url
   ws_allowed_origins = var.ws_allowed_origins
   invite_base_url    = var.invite_base_url
 

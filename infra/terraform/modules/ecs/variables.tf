@@ -80,10 +80,21 @@ variable "redis_port" {
 variable "s3_bucket" {
   description = <<-EOT
     アバター（F-02）・添付（F-10）を置く S3 バケット名。タスクロールの権限スコープと
-    アプリの S3_BUCKET 環境変数に使う。バケット本体の作成は本モジュール外（実 S3 を別途用意 or 後続 storage）。
+    アプリの S3_BUCKET 環境変数に使う。バケット本体は modules/storage が作成し、
+    envs/<env> から storage の bucket_name 出力を渡す。
   EOT
   type        = string
   default     = "raisechat-avatars"
+}
+
+variable "s3_public_base_url" {
+  description = <<-EOT
+    公開オブジェクトのベース URL（S3_PUBLIC_BASE_URL）。アプリは <base>/<key> で
+    アバター/添付を配信する。空文字なら注入せずアプリ既定（endpoint/bucket から導出）に委ねる。
+    本番（実 S3）では modules/storage の public_base_url を渡す。
+  EOT
+  type        = string
+  default     = ""
 }
 
 variable "ws_allowed_origins" {

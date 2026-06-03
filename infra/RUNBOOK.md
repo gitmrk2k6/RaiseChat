@@ -124,7 +124,7 @@ enable_nat_gateway = true   # private の ECS が ECR/Logs へ出るために必
 terraform plan -var-file=dev.tfvars
 ```
 
-作成予定リソース（VPC / subnet / SG / NAT / ALB / ECS / RDS / ElastiCache / ECR / 監視 / bastion）を確認。
+作成予定リソース（VPC / subnet / SG / NAT / ALB / ECS / RDS / ElastiCache / ECR / S3（アプリ用 storage） / 監視 / bastion）を確認。
 
 ### 2.5 イメージを先に push（ECR 作成だけ先行 apply する手順）
 
