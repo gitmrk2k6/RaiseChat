@@ -19,7 +19,7 @@ infra/terraform/
   bootstrap/     リモート state 置き場（S3 + DynamoDB）を作る。local state。1 回だけ apply。
   envs/
     dev/         dev 環境のルートスタック。modules を呼び出して構成を組み立てる。
-  modules/       再利用モジュール（network / data / ecs …）。Step 2 以降で追加。
+  modules/       再利用モジュール（network / data / ecs / cicd / monitoring / bastion）。
                  ※ フロントは ECS ホスト確定のため ecs モジュールに同居（単一 ALB パスルーティング・§12.2）。専用 frontend モジュールは作らない。
 ```
 

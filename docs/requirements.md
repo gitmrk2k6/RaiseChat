@@ -30,12 +30,13 @@ RaiseTech AI エンジニアコース **上級編** 学習課題として作成�
 | --- | --- | --- |
 | [「Slack 風」の捉え方](why-slack.md) | 発注意図の解釈・競合比較・スコープ判断の根拠 | ✅ 作成済み |
 | [機能要件書](functional-requirements.md) | F-XX 機能定義・バリデーション・ユースケース | ✅ 作成済み |
-| `docs/screen-design.md` | 画面一覧・ワイヤーフレーム・画面遷移図 | ⏳ 設計フェーズで作成 |
+| [画面設計書](screen-design.md) | 画面一覧・ワイヤーフレーム・画面遷移図 | ✅ 作成済み |
 | [データベース設計書](database-design.md) | ER 図・テーブル定義・インデックス | ✅ 作成済み |
+| [API 設計書](api-design.md) | REST エンドポイント・リクエスト / レスポンス仕様 | ✅ 作成済み |
 | [技術スタック設計書](tech-stack.md) | 採用技術・選定理由 | ✅ 作成済み |
 | [インフラ設計書](infrastructure.md) | AWS 構成図・ネットワーク・冗長化 | ✅ 作成済み |
-| `docs/realtime-design.md` | WebSocket / STOMP / Redis Pub-Sub 設計 | ⏳ 設計フェーズで作成 |
-| `docs/cache-strategy.md` | Redis によるキャッシュ戦略・TTL 設計 | ⏳ 設計フェーズで作成 |
+| [リアルタイム通信設計書](realtime-design.md) | WebSocket / STOMP / Redis Pub-Sub 設計 | ✅ 作成済み |
+| [Redis キャッシュ戦略設計書](cache-strategy.md) | Redis によるキャッシュ戦略・TTL 設計 | ✅ 作成済み |
 
 ---
 
@@ -73,6 +74,7 @@ RaiseTech AI エンジニアコース **上級編** 学習課題として作成�
 | MVP | F-14 | 通知機能 | 未読メッセージ数・メンション通知 |
 | MVP | F-15 | 招待機能 | オーナーがユーザーをワークスペース / チャンネルに招待 |
 | MVP | F-16 | 管理者操作機能 | オーナーによるユーザーキック・チャンネル削除 |
+| MVP | F-17 | プレゼンス / タイピング機能 | オンライン状態表示・入力中インジケータ（WebSocket、F-05/F-06/F-14 を補完） |
 
 ---
 
@@ -97,7 +99,7 @@ RaiseTech AI エンジニアコース **上級編** 学習課題として作成�
 
 ## 5. 画面設計（概要）
 
-サインアップ・ログイン・ワークスペース選択・チャンネル一覧 + メッセージビュー（メイン）・スレッドビュー・DM ビュー・検索・プロフィール編集・ワークスペース管理を主軸とする。詳細は **設計フェーズで `docs/screen-design.md` を作成** する。
+サインアップ・ログイン・ワークスペース選択・チャンネル一覧 + メッセージビュー（メイン）・スレッドビュー・DM ビュー・検索・プロフィール編集・ワークスペース管理を主軸とする。詳細は [画面設計書](screen-design.md) で確定済み。
 
 ---
 
@@ -109,7 +111,7 @@ RaiseTech AI エンジニアコース **上級編** 学習課題として作成�
 
 ## 7. 技術スタック（概要）
 
-Java / Spring Boot + Next.js (React) + PostgreSQL + Redis + WebSocket（STOMP）を軸に構成する想定（[CLAUDE.md](../CLAUDE.md) に暫定版を記載）。確定版は **設計フェーズで `docs/tech-stack.md` を作成** する。
+Java / Spring Boot + Next.js (React) + PostgreSQL + Redis + WebSocket（STOMP）を軸に構成する。採用技術・バージョンの確定版は [技術スタック設計書](tech-stack.md) を参照。
 
 ---
 
@@ -141,8 +143,8 @@ Java / Spring Boot + Next.js (React) + PostgreSQL + Redis + WebSocket（STOMP）
 
 | フェーズ | 内容 | 状態 |
 | --- | --- | --- |
-| ① 要件定義 | `why-slack.md` / `requirements.md` / `functional-requirements.md` を作成 | ✅ 進行中 |
-| ② 設計 | 画面・DB・技術スタック・インフラ・リアルタイム / キャッシュ設計を確定 | ⏳ |
-| ③ 実装 | バックエンド機能 → フロントエンド → 結合 | ⏳ |
-| ④ 自動レビュー導入 | 実装が一通り揃った後半で `.github/workflows/claude-code-review.yml` を導入し、複数機能が乗った PR で動作確認 | ⏳ |
-| ⑤ デプロイ・運用 | AWS / Render どちらかへの自動デプロイ、Ansible、監視 | ⏳ |
+| ① 要件定義 | `why-slack.md` / `requirements.md` / `functional-requirements.md` を作成 | ✅ 完了 |
+| ② 設計 | 画面・DB・API・技術スタック・インフラ・リアルタイム / キャッシュ設計を確定 | ✅ 完了 |
+| ③ 実装 | バックエンド機能 → フロントエンド → 結合 | ✅ MVP（F-01〜F-17）完了・フロント結合済 |
+| ④ 自動レビュー導入 | `.github/workflows/claude-code-review.yml` を導入。`review` ラベル付与時に手動起動 | ✅ 導入済 |
+| ⑤ デプロイ・運用 | AWS への自動デプロイ（GitHub Actions → ECR → ECS）、Ansible、監視 | 🚧 Terraform / デプロイ / 監視 / Ansible 着手済 |

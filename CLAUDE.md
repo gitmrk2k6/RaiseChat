@@ -168,7 +168,9 @@ docker compose stop localstack                       # 停止
 
 ---
 
-## 技術スタック方針（暫定）
+## 技術スタック方針
+
+確定版・バージョン詳細は [docs/tech-stack.md](docs/tech-stack.md) を正とする。
 
 | レイヤー | 主要技術 |
 | ------- | ------- |
@@ -178,8 +180,8 @@ docker compose stop localstack                       # 停止
 | データベース | PostgreSQL 17（Docker） |
 | キャッシュ / Pub-Sub | Redis 7 系（Docker） |
 | 認証 | Spring Security + JWT（JJWT） |
-| 画像 / ファイルストレージ | AWS S3（想定） |
-| インフラ | 後続フェーズで決定（AWS / Render を検討） |
+| 画像 / ファイルストレージ | AWS S3（ローカルは LocalStack） |
+| インフラ | AWS（ECS Fargate + RDS + ElastiCache + ALB + S3）。[docs/infrastructure.md](docs/infrastructure.md) で確定 |
 
 - バージョン・採用技術が確定したら `docs/tech-stack.md` も同時に更新する
 

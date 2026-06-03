@@ -33,7 +33,7 @@ RaiseChat の **リアルタイム通信プロトコル** を定義する。
 | --- | --- |
 | Redis を **キャッシュとして使う** 戦略（TTL / key 設計 / 無効化） | [docs/cache-strategy.md](cache-strategy.md) |
 | REST API の URL・スキーマ | [docs/api-design.md](api-design.md) |
-| 画面遷移・WebSocket イベントを UI にどう反映するか | `docs/screen-design.md`（D-4、後続作成） |
+| 画面遷移・WebSocket イベントを UI にどう反映するか | [docs/screen-design.md](screen-design.md)（D-4）|
 | 実装コード（`WebSocketConfig` 等の Java クラス） | 実装フェーズ（本書は仕様のみ） |
 
 ### 0.4 本書を読む前提
@@ -215,8 +215,8 @@ STOMP の destination は URL に似た階層を持つ。RaiseChat では 3 つ�
 | --- | --- | --- |
 | `/app/channels/{channelId}/messages` | チャンネル新規メッセージ送信 | F-05 |
 | `/app/dm/{roomId}/messages` | DM 新規メッセージ送信 | F-06 |
-| `/app/channels/{channelId}/typing` | タイピング状態通知 | F-05 関連（補助） |
-| `/app/dm/{roomId}/typing` | DM タイピング状態通知 | F-06 関連（補助） |
+| `/app/channels/{channelId}/typing` | タイピング状態通知 | F-17（F-05 補助） |
+| `/app/dm/{roomId}/typing` | DM タイピング状態通知 | F-17（F-06 補助） |
 | `/app/channels/{channelId}/read` | 既読位置の通知 | F-14 |
 
 > **メッセージ編集・削除・リアクション追加 / 解除は WebSocket 送信しない**。REST で受け、サーバー側でブロードキャストする（[docs/api-design.md §6](api-design.md) と一致）。
@@ -228,7 +228,7 @@ STOMP の destination は URL に似た階層を持つ。RaiseChat では 3 つ�
 | `/topic/channels/{channelId}` | `message.created` / `message.updated` / `message.deleted` / `reaction.added` / `reaction.removed` / `typing.started` / `typing.stopped` | F-05, F-07, F-11 |
 | `/topic/dm/{roomId}` | 同上（DM 文脈） | F-06, F-07, F-11 |
 | `/topic/threads/{parentMessageId}` | `message.created` / `message.updated` / `message.deleted` / `reaction.*`（スレッド内）| F-08, F-07, F-11 |
-| `/topic/workspaces/{workspaceId}/presence` | `presence.changed`（オンライン状態）| F-14 補助 |
+| `/topic/workspaces/{workspaceId}/presence` | `presence.changed`（オンライン状態）| F-17 |
 
 #### 4.2.3 個人宛（`/user/queue/**`）
 

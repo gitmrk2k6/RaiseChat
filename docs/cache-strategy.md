@@ -204,7 +204,7 @@ prefix のルール:
 | 5 | チャンネルメンバー一覧 | `cache:channel:{id}:members` | Set | 1h | チャンネル参加 / 退出 / キック | F-04 |
 | 6 | 直近メッセージ ID リスト | `cache:channel:{id}:recent` | List | 24h | 新規 / 編集 / 削除 | F-05, F-07 |
 | 7 | 未読カウント | `unread:user:{userId}:channel:{channelId}` | Integer | なし（明示更新のみ） | 新規メッセージで INCR / 既読で 0 にリセット | F-14 |
-| 8 | プレゼンス | `presence:user:{userId}` | String | 90s（ハートビート式）| WebSocket 接続でセット、自動失効 | F-14 補助 |
+| 8 | プレゼンス | `presence:user:{userId}` | String | 90s（ハートビート式）| WebSocket 接続でセット、自動失効 | F-17 |
 | 9 | JWT ブラックリスト | `jwt:blacklist:{jti}` | String | トークン残存時間 | ログアウト時に SET | F-01 |
 | 10 | ログイン試行レート制限 | `rate:login:ip:{ip}` | Integer | 60s | 自動失効 | F-01 補助 |
 
@@ -278,7 +278,7 @@ DB の `read_states` は最終既読位置を保持しており、Redis が飛�
 
 - メンバー多数のチャンネル（例: ワークスペース全員参加の `general`）で 1 投稿が大量の INCR を呼ぶ → MVP では許容、性能課題が見えたら **未読は「件数」ではなく「last_read_id との差」だけ持つ** 方式に切り替える
 
-### 4.4 プレゼンス（F-14 補助）
+### 4.4 プレゼンス（F-17）
 
 **目的**: 「誰がオンラインか」を全ユーザーに見せる。
 
