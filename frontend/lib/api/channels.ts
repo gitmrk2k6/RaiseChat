@@ -37,3 +37,23 @@ export async function getChannel(id: string): Promise<Channel> {
   const dto = await api.get<ChannelDto>(`/api/channels/${Number(id)}`);
   return toChannel(dto);
 }
+
+/**
+ * POST /api/workspaces/{wsId}/channels チャンネルを新規作成する。
+ * name は 1〜80 文字（バックエンド検証）。isPrivate で PUBLIC/PRIVATE を切り替える。
+ */
+export async function createChannel(
+  workspaceId: string,
+  input: { name: string; description?: string; isPrivate: boolean },
+): Promise<Channel> {
+  const description = input.description?.trim();
+  const dto = await api.post<ChannelDto>(
+    `/api/workspaces/${Number(workspaceId)}/channels`,
+    {
+      name: input.name.trim(),
+      description: description ? description : undefined,
+      type: input.isPrivate ? "PRIVATE" : "PUBLIC",
+    },
+  );
+  return toChannel(dto);
+}
