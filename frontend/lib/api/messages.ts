@@ -155,6 +155,43 @@ export async function listDmMessages(
   };
 }
 
+/** body + files を multipart/form-data にまとめる（F-10 添付メッセージ送信用）。 */
+function toMessageFormData(body: string, files: File[]): FormData {
+  const fd = new FormData();
+  fd.append("body", body);
+  for (const f of files) fd.append("files", f);
+  return fd;
+}
+
+/**
+ * POST /api/channels/{id}/messages 本文＋ファイルを一括投稿する（F-10、multipart）。
+ * 確定は WS の MESSAGE_CREATED 受信に委ねる（添付込みで全メンバーへ配信される）。返り値は基本使わない。
+ */
+export async function sendChannelMessageWithFiles(
+  channelId: string,
+  body: string,
+  files: File[],
+): Promise<Message> {
+  const dto = await api.post<MessageDto>(
+    `/api/channels/${Number(channelId)}/messages`,
+    toMessageFormData(body, files),
+  );
+  return toMessage(dto);
+}
+
+/** POST /api/dm/rooms/{id}/messages DM へ本文＋ファイルを一括投稿する（F-10、multipart）。 */
+export async function sendDmMessageWithFiles(
+  dmRoomId: string,
+  body: string,
+  files: File[],
+): Promise<Message> {
+  const dto = await api.post<MessageDto>(
+    `/api/dm/rooms/${Number(dmRoomId)}/messages`,
+    toMessageFormData(body, files),
+  );
+  return toMessage(dto);
+}
+
 /**
  * GET /api/messages/{parentId}/replies スレッド返信の履歴（F-08）。
  * チャンネル/DM 履歴と違い id 昇順（古→新）・前方ページングなので、表示用に reverse しない。

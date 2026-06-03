@@ -5,8 +5,10 @@ import com.raisechat.message.dto.EditMessageRequest;
 import com.raisechat.message.dto.MessageListResponse;
 import com.raisechat.message.dto.MessageResponse;
 import com.raisechat.message.dto.ReplyMessageRequest;
+import com.raisechat.message.exception.AttachmentValidationException;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -18,6 +20,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 @RestController
 public class MessageController {
@@ -46,6 +51,54 @@ public class MessageController {
             @RequestParam(required = false) Integer limit
     ) {
         return messageService.listDmMessages(principal.id(), id, cursor, limit);
+    }
+
+    // 添付メッセージで一度に受け付けるファイル数の上限。
+    private static final int MAX_ATTACHMENTS = 10;
+
+    // F-10: チャンネルへ本文＋ファイルを一括投稿する（multipart）。本文必須・ファイル 1〜10 件。
+    // 添付なしの通常メッセージは従来どおり WebSocket 経路で送るため、本エンドポイントは multipart のみ受け付ける。
+    @PostMapping(value = "/api/channels/{id}/messages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public MessageResponse createChannelMessageWithAttachments(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable Long id,
+            @RequestParam(value = "body", required = false) String body,
+            @RequestParam(value = "parentMessageId", required = false) Long parentMessageId,
+            @RequestParam("files") List<MultipartFile> files
+    ) {
+        validateAttachmentMessage(body, files);
+        return messageService.sendChannelMessageWithAttachments(principal.id(), id, body.trim(), parentMessageId, files);
+    }
+
+    // F-10: DM ルームへ本文＋ファイルを一括投稿する（multipart、チャンネル版と同仕様）。
+    @PostMapping(value = "/api/dm/rooms/{id}/messages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public MessageResponse createDmMessageWithAttachments(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable Long id,
+            @RequestParam(value = "body", required = false) String body,
+            @RequestParam(value = "parentMessageId", required = false) Long parentMessageId,
+            @RequestParam("files") List<MultipartFile> files
+    ) {
+        validateAttachmentMessage(body, files);
+        return messageService.sendDmMessageWithAttachments(principal.id(), id, body.trim(), parentMessageId, files);
+    }
+
+    // 本文（DB 制約 1〜4000 文字）とファイル件数（1〜MAX_ATTACHMENTS）を検証する。違反は 422。
+    private void validateAttachmentMessage(String body, List<MultipartFile> files) {
+        if (body == null || body.isBlank()) {
+            throw new AttachmentValidationException("本文は必須です");
+        }
+        if (body.trim().length() > 4000) {
+            throw new AttachmentValidationException("本文は 4000 文字以内にしてください");
+        }
+        if (files == null || files.isEmpty()) {
+            throw new AttachmentValidationException("添付ファイルが指定されていません");
+        }
+        if (files.size() > MAX_ATTACHMENTS) {
+            throw new AttachmentValidationException("添付できるファイルは最大 " + MAX_ATTACHMENTS + " 件です");
+        }
     }
 
     @GetMapping("/api/messages/{parentId}/replies")
