@@ -1,6 +1,7 @@
 package com.raisechat.channel;
 
 import com.raisechat.auth.jwt.AuthenticatedUser;
+import com.raisechat.channel.dto.AddChannelMembersRequest;
 import com.raisechat.channel.dto.ChannelInviteResponse;
 import com.raisechat.channel.dto.ChannelListResponse;
 import com.raisechat.channel.dto.ChannelResponse;
@@ -84,6 +85,16 @@ public class ChannelController {
     ) {
         channelService.delete(principal.id(), id);
         return ResponseEntity.noContent().build();
+    }
+
+    // チャンネルへメンバーを直接追加する（チャンネルメンバーのみ）。冪等。
+    @PostMapping("/api/channels/{id}/members")
+    public ChannelResponse addMembers(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable Long id,
+            @Valid @RequestBody AddChannelMembersRequest req
+    ) {
+        return channelService.addMembers(principal.id(), id, req.userIds());
     }
 
     // 招待リンクを発行する（チャンネルメンバーのみ）。ボディは任意（{} で既定値）。

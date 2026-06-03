@@ -298,6 +298,29 @@ public class ChannelService {
         return ChannelResponse.from(channel);
     }
 
+    /**
+     * チャンネルへメンバーを直接追加する（InviteUserModal）。
+     * 追加できるのは当該チャンネルのアクティブメンバーのみ。対象は同ワークスペースのメンバーであること。
+     * 既にメンバーの場合や過去に退出した場合も {@link #addAsChannelMember} が冪等に処理する。
+     */
+    @Transactional
+    public ChannelResponse addMembers(Long actorUserId, Long channelId, List<Long> userIds) {
+        Channel channel = channelRepository.findByIdAndDeletedAtIsNull(channelId)
+                .orElseThrow(() -> new ChannelNotFoundException(channelId));
+
+        // 追加操作はチャンネルメンバーのみ（招待リンク発行 createInvite と同じ権限モデル）。
+        requireChannelMember(channelId, actorUserId);
+
+        Long workspaceId = channel.getWorkspace().getId();
+        for (Long targetUserId : userIds.stream().distinct().toList()) {
+            // 追加対象はワークスペースメンバーであることが前提（非メンバーは 403）。
+            requireWorkspaceMember(workspaceId, targetUserId);
+            addAsChannelMember(channel, targetUserId);
+        }
+
+        return ChannelResponse.from(channel);
+    }
+
     // 招待を無効化する。無効化できるのはチャンネルのアクティブメンバーのみ。
     // 別チャンネルの inviteId は findByIdAndChannelId 不一致で 404。既に無効化済みでも冪等に成功（204）。
     @Transactional

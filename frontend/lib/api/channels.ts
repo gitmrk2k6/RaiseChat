@@ -57,3 +57,18 @@ export async function createChannel(
   );
   return toChannel(dto);
 }
+
+/**
+ * POST /api/channels/{id}/members 選択したメンバーをチャンネルへ直接追加する。
+ * 既にメンバーの場合や過去に退出した場合もバックエンドが冪等に処理する。
+ */
+export async function addChannelMembers(
+  channelId: string,
+  userIds: string[],
+): Promise<Channel> {
+  const dto = await api.post<ChannelDto>(
+    `/api/channels/${Number(channelId)}/members`,
+    { userIds: userIds.map(Number) },
+  );
+  return toChannel(dto);
+}
