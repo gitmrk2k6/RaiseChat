@@ -7,8 +7,8 @@
 ## 0. はじめに
 
 本書は RaiseChat の **REST API エンドポイント仕様** を定義する。
-F-01〜F-08（MVP コア機能）の REST API について、URL・HTTP メソッド・リクエスト / レスポンス JSON スキーマ・認証要否・エラーパターンを確定させる。
-WebSocket / STOMP のメッセージプロトコルは本書のスコープ外（[5.5](#55-チャンネルメッセージ-f-05-f-07) と [6](#6-websocket-との境界) で REST との分担のみ示し、詳細は `docs/realtime-design.md` で別途定義する）。
+MVP 全機能（F-01〜F-16）の REST API について、URL・HTTP メソッド・リクエスト / レスポンス JSON スキーマ・認証要否・エラーパターンを確定させる（F-09 マークダウン・F-17 presence/typing はサーバー側 REST を持たないため対象外）。
+WebSocket / STOMP のメッセージプロトコルは本書のスコープ外（[5.5](#55-チャンネルメッセージf-05-f-07) と [6](#6-websocket-との境界) で REST との分担のみ示し、詳細は [docs/realtime-design.md](realtime-design.md) で別途定義する）。
 
 ### 0.1 本書のスコープ
 
@@ -28,7 +28,6 @@ WebSocket / STOMP のメッセージプロトコルは本書のスコープ外�
 | トピック | 担当ドキュメント |
 | --- | --- |
 | WebSocket / STOMP / Redis Pub-Sub | [docs/realtime-design.md](realtime-design.md) |
-| F-10 / F-12 / F-13 / F-14 / F-16 の API（添付・メンション・検索・通知・管理） | 実装済だが本書未記載。別 PR で本書に追補予定 |
 | Redis キャッシュキー設計 | [docs/cache-strategy.md](cache-strategy.md) |
 | 画面遷移・ワイヤーフレーム | [docs/screen-design.md](screen-design.md) |
 
@@ -705,7 +704,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ### 5.8 ワークスペース招待（F-15）
 
-> 招待は「即メンバー追加」（pending 状態テーブルは作らない、`docs/database-design.md` §3.5 の方針）。チャンネル単位の招待は [5.9 チャンネル招待](#59-チャンネル招待-f-15) で別途定義する。
+> 招待は「即メンバー追加」（pending 状態テーブルは作らない、`docs/database-design.md` §3.5 の方針）。チャンネル単位の招待は [5.9 チャンネル招待](#59-チャンネル招待f-15) で別途定義する。
 
 **トークンの扱い**: 平文トークンは発行レスポンスでのみ返す。サーバーは `SHA-256` ハッシュ（hex 64桁）のみを `workspace_invites.token_hash` に保存し、平文は保持しない。受諾時はクライアントが提示した平文を再ハッシュして照合する。
 
@@ -896,6 +895,189 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ---
 
+### 5.11 メンション（F-12）
+
+> 実装済み。専用エンドポイントは持たない。メッセージ送信時にサーバーが本文を `@userId` でパースして `mentions` に保存し、`MessageResponse.mentionedUserIds` で返却する。通知（未読メンション数）は F-14（[§5.14](#514-通知f-14)）と連動する。
+
+- メンションの抽出・保存は **メッセージ送信（WebSocket）/ 編集（REST）の副作用** として行われる
+- レスポンスの `mentionedUserIds`（`List<Long>`）に、本文中で解決できたユーザー ID を含める
+- 通知側では `UnreadItem.mentionCount`（明示的な `@` のうち未読のもの。`unreadCount` の内数）として集計される
+- サジェスト UI（入力中の候補表示）はフロント側の責務で、API は持たない
+
+---
+
+### 5.12 メッセージ検索（F-13）
+
+> 実装済み。ワークスペース配下のメッセージを PostgreSQL の全文検索（`messages.body_tsv`）で検索する。アクセス可能なスコープ（自分が参加するチャンネル / DM）のみがヒット対象。
+
+**`SearchResultItem` スキーマ**（1 ヒット）:
+
+```json
+{
+  "messageId": 1042,
+  "channelId": 5,
+  "channelName": "general",
+  "dmRoomId": null,
+  "parentMessageId": null,
+  "authorId": 12,
+  "authorUserId": "alice",
+  "authorDisplayName": "Alice",
+  "body": "デプロイの手順をまとめました",
+  "editedAt": null,
+  "createdAt": "2026-05-31T09:00:00Z"
+}
+```
+
+  - DM ヒットの場合 `channelId` / `channelName` は `null`、`dmRoomId` が入る
+  - スレッド返信のヒットは `parentMessageId` を持つ（結果クリック時のスレッド内ジャンプに使う）
+
+#### 5.12.1 GET /api/workspaces/{wsId}/search
+
+- **目的**: ワークスペース内のメッセージを全文検索する
+- **認証**: 必要（ワークスペースメンバーシップ）
+- **クエリパラメータ**:
+  - `q`: 検索語
+  - `cursor`（任意）: ページング用。直前のレスポンスの `nextCursor`（最後の要素の `messageId`）を渡す
+  - `limit`（任意）: 取得件数
+- **レスポンス** `200 OK`:
+
+```json
+{
+  "items": [ /* SearchResultItem の配列（新しい順）*/ ],
+  "nextCursor": "1042",
+  "hasMore": true
+}
+```
+
+- **エラー**:
+  - `401 Unauthorized`
+  - `403 Forbidden`: 非メンバー
+  - `422 Unprocessable Entity`: `q` が不正（空・短すぎる等）
+- **既知の制約**: 日本語は `simple` 設定のため部分一致非対応（分かち書きされた語の一致が前提）。
+
+---
+
+### 5.13 ファイル添付（F-10）
+
+> 実装済み。既存メッセージに対し **直接 multipart アップロード** で画像 / 動画を添付する。F-02 アバターと同じ `ObjectStorage` 抽象（ローカル LocalStack / 本番 S3）を再利用。pre-signed URL 方式は将来 `ObjectStorage` の裏で差し替え可能。
+
+**`AttachmentResponse` スキーマ**:
+
+```json
+{
+  "id": 7,
+  "messageId": 1042,
+  "uploaderId": 12,
+  "url": "https://.../avatars-or-attachments/....png",
+  "mimeType": "image/png",
+  "sizeBytes": 20480,
+  "originalFilename": "diagram.png",
+  "width": 800,
+  "height": 600,
+  "durationSec": null,
+  "createdAt": "2026-05-31T09:10:00Z"
+}
+```
+
+  - S3 のキーは外部に晒さず、復元済みの公開 `url` のみ返す
+  - 画像は `width` / `height`、動画は `durationSec` を返しうる（取得できなければ `null`）
+  - 添付は以後、当該メッセージの `MessageResponse.attachments` にも含まれて返却される
+
+#### 5.13.1 POST /api/messages/{id}/attachments
+
+- **目的**: 既存メッセージにファイルを添付する
+- **認証**: 必要。**添付できるのは投稿者本人のみ**（メッセージ編集と同じ権限モデル）
+- **リクエスト**: `multipart/form-data`、パート名 `file`
+- **制約**:
+  - 許可 MIME（5 種）: `image/jpeg` / `image/png` / `image/gif` / `image/webp` / `video/mp4`
+  - 上限サイズ: **10 MB**
+  - DB の `attachments_mime_check` / `attachments_size_check` と一致
+- **レスポンス** `201 Created`: `AttachmentResponse`
+- **エラー**:
+  - `401 Unauthorized`
+  - `403 Forbidden`: メッセージの投稿者以外
+  - `404 Not Found`: メッセージ不在 / 削除済み
+  - `413 Payload Too Large`: 10 MB 超過
+  - `415 Unsupported Media Type`: 許可 MIME 以外
+  - `422 Unprocessable Entity`: ファイル不正（空など）
+
+---
+
+### 5.14 通知（F-14）
+
+> 実装済み。未読カウント（チャンネル / DM 単位）と既読位置の更新を扱う。未読カウントは Redis を主、`read_states` をソースとして保持する。リアルタイムの未読更新・メンション通知は WebSocket（`/user/queue/notifications`、[realtime-design.md](realtime-design.md)）で配信する。
+
+**`UnreadItem` スキーマ**（1 スコープ）:
+
+```json
+{
+  "scopeType": "channel",
+  "scopeId": 5,
+  "unreadCount": 3,
+  "mentionCount": 1
+}
+```
+
+  - `scopeType`: `"channel"` または `"dm"`
+  - `mentionCount`: 未読メンション数（`unreadCount` の内数）
+
+#### 5.14.1 GET /api/notifications/unread
+
+- **目的**: 自分の未読数を全スコープ分まとめて取得する
+- **認証**: 必要
+- **レスポンス** `200 OK`:
+
+```json
+{ "items": [ /* UnreadItem の配列。未読 0 件のスコープは含めない */ ] }
+```
+
+#### 5.14.2 POST /api/channels/{id}/read / POST /api/dm/rooms/{id}/read
+
+- **目的**: 指定スコープの既読位置を更新する（未読カウントをリセット）
+- **認証**: 必要（当該チャンネル / DM のメンバーシップ）
+- **リクエスト**（任意ボディ）:
+
+```json
+{ "lastReadMessageId": 1042 }
+```
+
+  - `lastReadMessageId` が `null` / ボディ無しの場合は、そのスコープの **最新メッセージまで** 既読扱い
+- **レスポンス** `204 No Content`
+- **副作用**: 他タブ向けに `read.updated` を `/user/queue/notifications` へ配信しうる
+- **エラー**: `401 Unauthorized` / `403 Forbidden`（非メンバー）/ `404 Not Found`
+
+---
+
+### 5.15 管理者操作（F-16）
+
+> 実装済み。専用リソースは設けず、既存リソースの **DELETE + 権限チェック** で表現する。削除はいずれも論理削除（`deleted_at`）。キック / チャンネル削除はリアルタイム WS 通知を伴う。
+
+#### 5.15.1 DELETE /api/workspaces/{wsId}/members/{userId}（ユーザーキック）
+
+- **目的**: ワークスペースから対象メンバーを除外する
+- **認証 / 認可**: **OWNER のみ**
+- **レスポンス** `204 No Content`
+- **副作用**: キックされたユーザーは即座にワークスペース内のチャンネル / DM へアクセス不能になる（リアルタイム WS 通知あり）
+- **エラー**: `401` / `403`（OWNER 以外）/ `404`（ワークスペース / メンバー不在）
+
+#### 5.15.2 DELETE /api/channels/{id}（チャンネル削除）
+
+- **目的**: チャンネルを論理削除する
+- **認証 / 認可**: チャンネルのオーナー / 作成者のみ
+- **レスポンス** `204 No Content`
+- **副作用**: 紐づくメッセージ・リアクション・添付も論理削除。購読者へ削除を WS 通知
+- **エラー**: `401` / `403` / `404`
+
+#### 5.15.3 DELETE /api/workspaces/{wsId}（ワークスペース削除）
+
+- **目的**: ワークスペースを論理削除する
+- **認証 / 認可**: **OWNER のみ**
+- **レスポンス** `204 No Content`
+- **副作用**: 配下のチャンネル・メンバーシップも論理削除し、未読バッジも除去する
+- **エラー**: `401` / `403`（OWNER 以外・非メンバー）/ `404`（不在 / 削除済み）
+
+---
+
 ## 6. WebSocket との境界
 
 REST と WebSocket の責務分担を明示する。WebSocket メッセージプロトコルの詳細は [docs/realtime-design.md](realtime-design.md) で定義済み。
@@ -924,20 +1106,27 @@ REST と WebSocket の責務分担を明示する。WebSocket メッセージプ
 
 ---
 
-## 7. 今後の追加機能（F-09 以降の予告）
+## 7. 機能別 API 一覧（実装状況）
 
-本書はコア機能（F-01〜F-08）に絞った。残機能の API は別 PR で追補する。概略:
+MVP の全機能（F-01〜F-16）の API を本書で定義済み。各機能の節へのリンク:
 
-| 機能 | 想定エンドポイント | 備考 |
+| 機能 | エンドポイント / 節 | 状態 |
 | --- | --- | --- |
+| F-01 ユーザー認証 | [§5.1](#51-認証f-01) | ✅ 定義済 |
+| F-02 プロフィール | [§5.2](#52-プロフィールf-02) | ✅ 定義済 |
+| F-03 ワークスペース | [§5.3](#53-ワークスペースf-03) | ✅ 定義済 |
+| F-04 チャンネル | [§5.4](#54-チャンネルf-04) | ✅ 定義済 |
+| F-05 / F-07 メッセージ・編集削除 | [§5.5](#55-チャンネルメッセージf-05-f-07) | ✅ 定義済 |
+| F-06 DM | [§5.6](#56-ダイレクトメッセージf-06) | ✅ 定義済 |
+| F-08 スレッド | [§5.7](#57-スレッドf-08) | ✅ 定義済 |
 | F-09 マークダウン | サーバー側エンドポイントなし | クライアント側レンダリングのみ。XSS 対策は表示時のサニタイズ |
-| F-10 ファイル添付 | ✅ `POST /api/messages/{id}/attachments`（multipart）で実装済 | 直接 multipart 方式に確定（F-02 アバターと同じ `ObjectStorage` 抽象を再利用）。投稿者のみ添付可・mime 5値 / 10MB 上限・添付は `MessageResponse.attachments` で返却。pre-signed URL 方式は将来 `ObjectStorage` 裏で差替可 |
-| F-11 絵文字リアクション | ✅ [§5.10](#510-絵文字リアクションf-11) で定義済（付与・解除 + WS 配信） | |
-| F-12 メンション | メッセージ送信時に本文パースで自動抽出。明示エンドポイントは不要 | 通知は F-14 と連動 |
-| F-13 検索 | `GET /api/workspaces/{wsId}/search?q=...` | PostgreSQL `body_tsv` を使った全文検索 |
-| F-14 通知 | `GET /api/notifications`, `PUT /api/read-states` 等 | 未読カウントは Redis 主、`read_states` はソース |
-| F-15 招待 | ✅ ワークスペース招待を [§5.8](#58-ワークスペース招待f-15) で定義済。チャンネル招待（`POST /api/channels/{id}/invites`）は別 Issue | |
-| F-16 管理者操作 | 既存 CRUD の権限拡張で対応 | 専用エンドポイントは最小限 |
+| F-10 ファイル添付 | [§5.13](#513-ファイル添付f-10) | ✅ 定義済 |
+| F-11 絵文字リアクション | [§5.10](#510-絵文字リアクションf-11) | ✅ 定義済 |
+| F-12 メンション | [§5.11](#511-メンションf-12) | ✅ 定義済（専用エンドポイントなし） |
+| F-13 検索 | [§5.12](#512-メッセージ検索f-13) | ✅ 定義済 |
+| F-14 通知 | [§5.14](#514-通知f-14) | ✅ 定義済 |
+| F-15 招待 | [§5.8](#58-ワークスペース招待f-15) / [§5.9](#59-チャンネル招待f-15) | ✅ 定義済 |
+| F-16 管理者操作 | [§5.15](#515-管理者操作f-16) | ✅ 定義済 |
 
 ---
 
@@ -949,3 +1138,4 @@ REST と WebSocket の責務分担を明示する。WebSocket メッセージプ
 | 2026-05-29 | F-15 ワークスペース招待 API（発行・受諾・無効化）を §5.8 に追加。410 Gone を §2.3 に追加 | #59 |
 | 2026-05-29 | F-08 スレッド API（§5.7）を実装。1 階層固定（root 付け替え）/ 返信イベントは `/topic/threads/{rootId}` のみに配信、を実装メモとして追記 | #63 |
 | 2026-05-30 | F-11 絵文字リアクション API（§5.10）を実装。付与 201/200 冪等・解除 204 冪等、`WsEvent.payload` を `Object` 化してリアクションイベントを既存トピックへ配信 | #70 |
+| 2026-06-03 | 実装済だが本書未記載だった F-12 メンション（§5.11）/ F-13 検索（§5.12）/ F-10 添付（§5.13）/ F-14 通知（§5.14）/ F-16 管理者操作（§5.15）を実コードから追記。§7 を機能別 API 一覧に再構成し、本書のスコープを F-01〜F-16 に更新 | #149 |
