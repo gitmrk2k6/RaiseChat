@@ -154,7 +154,11 @@ export function Sidebar() {
         </div>
       </aside>
 
-      <CreateChannelModal open={createOpen} onClose={() => setCreateOpen(false)} />
+      <CreateChannelModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        workspaceId={workspaceId}
+      />
       <NewDmModal
         open={newDmOpen}
         onClose={() => setNewDmOpen(false)}
