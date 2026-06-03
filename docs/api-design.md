@@ -180,6 +180,11 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 | 28 | POST | `/api/channels/{id}/invites` | 必要（チャンネルメンバー） | F-15 チャンネル招待リンク発行 |
 | 29 | POST | `/api/channel-invites/{token}/accept` | 必要（同一 WS メンバー） | F-15 チャンネル招待受諾（呼び出しユーザーが参加） |
 | 30 | DELETE | `/api/channels/{id}/invites/{inviteId}` | 必要（チャンネルメンバー） | F-15 チャンネル招待リンク無効化 |
+| 31 | POST | `/api/channels/{id}/messages` | 必要（チャンネルメンバー） | F-10 添付込みチャンネルメッセージ作成（multipart） |
+| 32 | POST | `/api/dm/rooms/{id}/messages` | 必要（DM ルームメンバー） | F-10 添付込み DM メッセージ作成（multipart） |
+| 33 | GET | `/api/channels/{id}/members` | 必要（チャンネル閲覧可） | F-16 チャンネルメンバー一覧 |
+| 34 | POST | `/api/channels/{id}/members` | 必要（チャンネルメンバー） | F-16 チャンネルへメンバー直接追加 |
+| 35 | DELETE | `/api/channels/{id}/members/{userId}` | 必要（OWNER / 作成者） | F-16 チャンネルからメンバー削除（キック） |
 
 > **メッセージ送信について**: F-05 / F-06 の **新規メッセージ送信** は WebSocket（STOMP）経由が主であり、REST には用意しない。理由: クライアント・サーバー双方で配信経路を一本化することで、リアルタイム配信時のメッセージ重複・順序逆転を避けるため。スレッド返信（F-08）のみ MVP では REST も用意し、WebSocket 経路と並走させる検討余地を残す。詳細は [6. WebSocket との境界](#6-websocket-との境界) を参照。
 
@@ -567,6 +572,59 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 - **エラー**:
   - `401 Unauthorized` / `403 Forbidden` / `404 Not Found`
 
+#### 5.4.7 GET /api/channels/{id}/members
+
+- **目的**: チャンネルのアクティブメンバー一覧を取得する（メンバー数バッジ・メンバー管理モーダルで使用）
+- **認証**: 必要（チャンネルを閲覧できるユーザーのみ。パブリックは同一 WS メンバー、プライベートはメンバーのみ）
+- **レスポンス** `200 OK`: `ChannelMember[]`（`left_at IS NULL` のアクティブメンバーのみ。チャンネルにロールの概念は無い）
+
+```json
+[
+  { "id": 12, "userId": "ryo", "displayName": "Ryo", "avatarUrl": null }
+]
+```
+
+- **エラー**:
+  - `401 Unauthorized` / `403 Forbidden` / `404 Not Found`
+
+#### 5.4.8 POST /api/channels/{id}/members
+
+- **目的**: 選択したメンバーをチャンネルへ **直接追加** する（招待リンクを介さない正攻法。InviteUserModal）
+- **認証 / 認可**: 必要。**追加操作者は当該チャンネルのアクティブメンバー**であること（招待リンク発行と同じ権限モデル）
+- **リクエスト**:
+
+```json
+{ "userIds": [12, 15] }
+```
+
+| フィールド | 制約 |
+| --- | --- |
+| `userIds` | 必須、1 件以上。各対象は当該チャンネルが属するワークスペースのメンバーであること |
+
+- **仕様注**:
+  - 既にアクティブメンバー / 過去に退出した対象も冪等に処理する（退出履歴があれば `left_at` をクリアして再参加）
+  - 新規にメンバー化した対象（追加操作者自身を除く）へは `CHANNEL_ADDED` を WS 通知し、追加された側のサイドバーへリロード無しで即時反映する（キックの `CHANNEL_REMOVED` と対称。[6.1](#61-websocket-destination-の現状規約参考) 参照）
+- **レスポンス** `200 OK`: 対象チャンネルの `Channel`
+- **エラー**:
+  - `401 Unauthorized`
+  - `403 Forbidden`: 追加操作者がチャンネル非メンバー / 対象が WS 非メンバー
+  - `404 Not Found`: チャンネル不在 / 削除済み
+
+#### 5.4.9 DELETE /api/channels/{id}/members/{userId}
+
+- **目的**: チャンネルから対象メンバーを除外（キック）する（KickUserModal）
+- **認証 / 認可**: 必要。**OWNER または作成者のみ**（チャンネル削除と同じモデル）
+- **仕様注**:
+  - 自分自身は除外不可（退出 [5.4.5](#545-post-apichannelsidleave) を使う）。`general` チャンネルからは除外不可
+  - 対象が現在のアクティブメンバーでなければ冪等に no-op
+  - 除外時は対象へ `CHANNEL_REMOVED` を WS 通知＋未読クリアし、対象の画面から当該チャンネルを即時に消す
+- **レスポンス** `204 No Content`
+- **エラー**:
+  - `401 Unauthorized`
+  - `403 Forbidden`: OWNER / 作成者以外
+  - `404 Not Found`: チャンネル不在 / 削除済み
+  - `409 Conflict`: 自分自身を指定 / `general` チャンネル
+
 ### 5.5 チャンネルメッセージ（F-05, F-07）
 
 #### 5.5.1 GET /api/channels/{id}/messages
@@ -590,6 +648,28 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 - **エラー**:
   - `401 Unauthorized` / `403 Forbidden` / `404 Not Found`
+
+#### 5.5.1a POST /api/channels/{id}/messages（添付込み作成 / F-10）
+
+- **目的**: 本文＋ファイル添付を **1 リクエストで** 投稿する（multipart）。添付込みメッセージ作成の専用経路
+- **認証**: 必要（当該チャンネルメンバーまたはパブリックなら同一ワークスペースメンバー）
+- **リクエスト**: `multipart/form-data`
+
+| パート | 制約 |
+| --- | --- |
+| `body` | 必須、1〜4000 文字（添付込み作成では本文必須） |
+| `files` | 必須、1〜10 件。各ファイルの MIME / サイズ制約は [5.13.1](#5131-post-apimessagesidattachments) と同一（5 種 / 10 MB） |
+| `parentMessageId` | 任意。スレッド返信として添付込み投稿する場合に指定 |
+
+- **仕様注**:
+  - 添付 **なし** の通常メッセージは従来どおり WebSocket 経由で送る（本エンドポイントは `multipart/form-data` のみ受け付ける）
+  - 内部処理は「メッセージ作成 → S3 アップロード → 添付込みの `MESSAGE_CREATED` を 1 回だけ配信」。確定はこの WS 受信に一本化する（[6.1](#61-websocket-destination-の現状規約参考)）
+- **レスポンス** `201 Created`: 添付込みの `Message`（`attachments` に `AttachmentResponse[]`）
+- **エラー**:
+  - `401 Unauthorized` / `403 Forbidden` / `404 Not Found`
+  - `413 Payload Too Large`: 10 MB 超過
+  - `415 Unsupported Media Type`: 許可 MIME 以外
+  - `422 Unprocessable Entity`: 本文が空 / 4000 文字超 / ファイル 0 件 / 10 件超
 
 #### 5.5.2 PUT /api/messages/{id}
 
@@ -670,6 +750,14 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 - **レスポンス** `200 OK`: ページング共通形（`items: Message[]`）
 - **エラー**:
   - `401 Unauthorized` / `403 Forbidden` / `404 Not Found`
+
+#### 5.6.4 POST /api/dm/rooms/{id}/messages（添付込み作成 / F-10）
+
+- **目的**: DM ルームへ本文＋ファイル添付を 1 リクエストで投稿する（multipart、チャンネル版 [5.5.1a](#551a-post-apichannelsidmessages添付込み作成--f-10) と同仕様）
+- **認証**: 必要（当該 DM ルームメンバーのみ）
+- **リクエスト**: `multipart/form-data`（`body` 必須 1〜4000 文字 / `files` 1〜10 件 / `parentMessageId` 任意）
+- **レスポンス** `201 Created`: 添付込みの `Message`
+- **エラー**: [5.5.1a](#551a-post-apichannelsidmessages添付込み作成--f-10) と同じ（401 / 403 / 404 / 413 / 415 / 422）
 
 ### 5.7 スレッド（F-08）
 
@@ -959,7 +1047,10 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ### 5.13 ファイル添付（F-10）
 
-> 実装済み。既存メッセージに対し **直接 multipart アップロード** で画像 / 動画を添付する。F-02 アバターと同じ `ObjectStorage` 抽象（ローカル LocalStack / 本番 S3）を再利用。pre-signed URL 方式は将来 `ObjectStorage` の裏で差し替え可能。
+> 実装済み。画像 / 動画の添付には 2 経路がある。F-02 アバターと同じ `ObjectStorage` 抽象（ローカル LocalStack / 本番 S3）を再利用。pre-signed URL 方式は将来 `ObjectStorage` の裏で差し替え可能。
+>
+> 1. **添付込みメッセージ作成（推奨・フロント既定）**: 本文＋ファイルを 1 リクエストで投稿する。チャンネルは [5.5.1a](#551a-post-apichannelsidmessages添付込み作成--f-10)、DM は [5.6.4](#564-post-apidmroomsidmessages添付込み作成--f-10)。作成と添付を 1 回の WS 配信にまとめる。
+> 2. **既存メッセージへの直接添付**（下記 5.13.1）: 既に存在するメッセージへ後から 1 ファイルずつ添付する。
 
 **`AttachmentResponse` スキーマ**:
 
@@ -1051,6 +1142,8 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ### 5.15 管理者操作（F-16）
 
 > 実装済み。専用リソースは設けず、既存リソースの **DELETE + 権限チェック** で表現する。削除はいずれも論理削除（`deleted_at`）。キック / チャンネル削除はリアルタイム WS 通知を伴う。
+>
+> チャンネル単位のメンバー管理（一覧 / 直接追加 / 除外）は §5.4 に集約している: 一覧 [5.4.7](#547-get-apichannelsidmembers)、追加 [5.4.8](#548-post-apichannelsidmembers)、除外 [5.4.9](#549-delete-apichannelsidmembersuserid)。追加は `CHANNEL_ADDED`、除外は `CHANNEL_REMOVED` を対象へ WS 通知し、サイドバーを即時に増減させる。
 
 #### 5.15.1 DELETE /api/workspaces/{wsId}/members/{userId}（ユーザーキック）
 
@@ -1103,6 +1196,7 @@ REST と WebSocket の責務分担を明示する。WebSocket メッセージプ
 | `/topic/threads/{parentId}` | スレッド返信・スレッド内リアクション増減イベントの配信先 |
 | `/app/channels/{id}/messages` | クライアント → サーバー：チャンネルメッセージ送信 |
 | `/app/dm/{roomId}/messages` | クライアント → サーバー：DM メッセージ送信 |
+| `/user/queue/notifications` | ユーザー個別キュー：未読更新（`UNREAD_*`）／ メンバーシップ変化（`WORKSPACE_REMOVED` / `CHANNEL_REMOVED` / `CHANNEL_ADDED`）。剥奪・追加系は対象ユーザーのサイドバーを即時更新する（[realtime-design.md](realtime-design.md)） |
 
 ---
 
@@ -1139,3 +1233,4 @@ MVP の全機能（F-01〜F-16）の API を本書で定義済み。各機能の
 | 2026-05-29 | F-08 スレッド API（§5.7）を実装。1 階層固定（root 付け替え）/ 返信イベントは `/topic/threads/{rootId}` のみに配信、を実装メモとして追記 | #63 |
 | 2026-05-30 | F-11 絵文字リアクション API（§5.10）を実装。付与 201/200 冪等・解除 204 冪等、`WsEvent.payload` を `Object` 化してリアクションイベントを既存トピックへ配信 | #70 |
 | 2026-06-03 | 実装済だが本書未記載だった F-12 メンション（§5.11）/ F-13 検索（§5.12）/ F-10 添付（§5.13）/ F-14 通知（§5.14）/ F-16 管理者操作（§5.15）を実コードから追記。§7 を機能別 API 一覧に再構成し、本書のスコープを F-01〜F-16 に更新 | #149 |
+| 2026-06-04 | 後追い実装したエンドポイントを追記: 添付込みメッセージ作成 `POST /api/channels\|dm/rooms/{id}/messages`（multipart、§5.5.1a / §5.6.4）、チャンネルメンバー管理 `GET/POST /api/channels/{id}/members`・`DELETE …/{userId}`（§5.4.7〜5.4.9）。直接追加の `CHANNEL_ADDED` WS 通知（キックの `CHANNEL_REMOVED` と対称）を §6.1 に追記 | #175 |

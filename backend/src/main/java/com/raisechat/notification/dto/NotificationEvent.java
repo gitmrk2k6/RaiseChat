@@ -31,7 +31,9 @@ public record NotificationEvent(
         // 対象ユーザーがワークスペースから外れた（キック / WS 削除）。scopeId=workspaceId。
         WORKSPACE_REMOVED,
         // 対象ユーザーが見ていたチャンネルが消えた（チャンネル削除）。scopeId=channelId。
-        CHANNEL_REMOVED
+        CHANNEL_REMOVED,
+        // 対象ユーザーがチャンネルへ追加された（直接追加）。CHANNEL_REMOVED と対称。scopeId=channelId。
+        CHANNEL_ADDED
     }
 
     /** WS キック / WS 削除で、対象ユーザーへ「この WS から外れた」を通知するイベント。 */
@@ -42,5 +44,10 @@ public record NotificationEvent(
     /** チャンネル削除で、メンバーへ「このチャンネルが消えた」を通知するイベント。 */
     public static NotificationEvent channelRemoved(Long channelId) {
         return new NotificationEvent(EventType.CHANNEL_REMOVED, SCOPE_CHANNEL, channelId, 0, 0);
+    }
+
+    /** チャンネルへの直接追加で、追加された側へ「このチャンネルに入った」を通知するイベント。 */
+    public static NotificationEvent channelAdded(Long channelId) {
+        return new NotificationEvent(EventType.CHANNEL_ADDED, SCOPE_CHANNEL, channelId, 0, 0);
     }
 }
