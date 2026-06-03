@@ -4,11 +4,13 @@ import com.raisechat.auth.jwt.AuthenticatedUser;
 import com.raisechat.channel.dto.AddChannelMembersRequest;
 import com.raisechat.channel.dto.ChannelInviteResponse;
 import com.raisechat.channel.dto.ChannelListResponse;
+import com.raisechat.channel.dto.ChannelMemberResponse;
 import com.raisechat.channel.dto.ChannelResponse;
 import com.raisechat.channel.dto.CreateChannelRequest;
 import com.raisechat.workspace.dto.CreateInviteRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -87,6 +89,15 @@ public class ChannelController {
         return ResponseEntity.noContent().build();
     }
 
+    // チャンネルのアクティブメンバー一覧（チャンネルを閲覧できるユーザーのみ）。
+    @GetMapping("/api/channels/{id}/members")
+    public List<ChannelMemberResponse> listMembers(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable Long id
+    ) {
+        return channelService.listMembers(principal.id(), id);
+    }
+
     // チャンネルへメンバーを直接追加する（チャンネルメンバーのみ）。冪等。
     @PostMapping("/api/channels/{id}/members")
     public ChannelResponse addMembers(
@@ -95,6 +106,17 @@ public class ChannelController {
             @Valid @RequestBody AddChannelMembersRequest req
     ) {
         return channelService.addMembers(principal.id(), id, req.userIds());
+    }
+
+    // チャンネルからメンバーを除外（キック）する（OWNER または作成者のみ）。
+    @DeleteMapping("/api/channels/{id}/members/{userId}")
+    public ResponseEntity<Void> kickMember(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable Long id,
+            @PathVariable Long userId
+    ) {
+        channelService.kickMember(principal.id(), id, userId);
+        return ResponseEntity.noContent().build();
     }
 
     // 招待リンクを発行する（チャンネルメンバーのみ）。ボディは任意（{} で既定値）。

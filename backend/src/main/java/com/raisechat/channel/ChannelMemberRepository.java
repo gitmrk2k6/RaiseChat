@@ -20,6 +20,16 @@ public interface ChannelMemberRepository extends JpaRepository<ChannelMember, Lo
             """)
     List<Long> findActiveUserIdsByChannelId(@Param("channelId") Long channelId);
 
+    // メンバー一覧表示用: チャンネルのアクティブメンバーを user 込みで参加順に取得する。
+    @Query("""
+            SELECT cm FROM ChannelMember cm
+            JOIN FETCH cm.user u
+            WHERE cm.channel.id = :channelId
+              AND cm.leftAt IS NULL
+            ORDER BY cm.joinedAt ASC, cm.id ASC
+            """)
+    List<ChannelMember> findActiveByChannelIdWithUser(@Param("channelId") Long channelId);
+
     // 未読再構築用: ユーザーが現在参加しているチャンネルの id 一覧
     @Query("""
             SELECT cm.channel.id FROM ChannelMember cm

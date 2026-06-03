@@ -9,6 +9,8 @@ export const queryKeys = {
   channels: (workspaceId: string) =>
     ["workspaces", workspaceId, "channels"] as const,
   channel: (channelId: string) => ["channels", channelId] as const,
+  channelMembers: (channelId: string) =>
+    ["channels", channelId, "members"] as const,
   channelMessages: (channelId: string) =>
     ["channels", channelId, "messages"] as const,
   dmRooms: (workspaceId: string) =>
