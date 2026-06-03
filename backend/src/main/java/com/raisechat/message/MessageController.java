@@ -56,7 +56,8 @@ public class MessageController {
     // 添付メッセージで一度に受け付けるファイル数の上限。
     private static final int MAX_ATTACHMENTS = 10;
 
-    // F-10: チャンネルへ本文＋ファイルを一括投稿する（multipart）。本文必須・ファイル 1〜10 件。
+    // F-10: チャンネルへ本文＋ファイルを一括投稿する（multipart）。ファイル 1〜10 件必須。
+    // 本文は任意（file-only 添付を許可。本文なしは空文字として保存する）。
     // 添付なしの通常メッセージは従来どおり WebSocket 経路で送るため、本エンドポイントは multipart のみ受け付ける。
     @PostMapping(value = "/api/channels/{id}/messages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
@@ -68,7 +69,7 @@ public class MessageController {
             @RequestParam("files") List<MultipartFile> files
     ) {
         validateAttachmentMessage(body, files);
-        return messageService.sendChannelMessageWithAttachments(principal.id(), id, body.trim(), parentMessageId, files);
+        return messageService.sendChannelMessageWithAttachments(principal.id(), id, normalizeBody(body), parentMessageId, files);
     }
 
     // F-10: DM ルームへ本文＋ファイルを一括投稿する（multipart、チャンネル版と同仕様）。
@@ -82,15 +83,13 @@ public class MessageController {
             @RequestParam("files") List<MultipartFile> files
     ) {
         validateAttachmentMessage(body, files);
-        return messageService.sendDmMessageWithAttachments(principal.id(), id, body.trim(), parentMessageId, files);
+        return messageService.sendDmMessageWithAttachments(principal.id(), id, normalizeBody(body), parentMessageId, files);
     }
 
-    // 本文（DB 制約 1〜4000 文字）とファイル件数（1〜MAX_ATTACHMENTS）を検証する。違反は 422。
+    // 本文長（最大 4000 文字）とファイル件数（1〜MAX_ATTACHMENTS）を検証する。違反は 422。
+    // 本文は任意: このエンドポイントは files 必須なので、本文が空でも「本文 or 添付」の要件は満たされる。
     private void validateAttachmentMessage(String body, List<MultipartFile> files) {
-        if (body == null || body.isBlank()) {
-            throw new AttachmentValidationException("本文は必須です");
-        }
-        if (body.trim().length() > 4000) {
+        if (body != null && body.trim().length() > 4000) {
             throw new AttachmentValidationException("本文は 4000 文字以内にしてください");
         }
         if (files == null || files.isEmpty()) {
@@ -99,6 +98,11 @@ public class MessageController {
         if (files.size() > MAX_ATTACHMENTS) {
             throw new AttachmentValidationException("添付できるファイルは最大 " + MAX_ATTACHMENTS + " 件です");
         }
+    }
+
+    // null 本文（file-only）を空文字に正規化し、前後の空白を落とす。body は NOT NULL のため "" を保存する。
+    private static String normalizeBody(String body) {
+        return body == null ? "" : body.trim();
     }
 
     @GetMapping("/api/messages/{parentId}/replies")

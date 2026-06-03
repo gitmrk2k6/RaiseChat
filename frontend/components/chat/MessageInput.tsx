@@ -91,8 +91,8 @@ export function MessageInput({ placeholder, onSend, onSendFiles, onTyping }: Pro
 
   const submit = () => {
     const body = value.trim();
-    // DB 制約（本文 1〜4000 文字）に合わせ、添付の有無に関わらず本文は必須。
-    if (body.length === 0 || uploading) return;
+    // 本文か添付のどちらかがあれば送信可（file-only＝本文なし添付も許可）。
+    if ((body.length === 0 && files.length === 0) || uploading) return;
 
     if (files.length > 0 && onSendFiles) {
       setUploading(true);
@@ -242,7 +242,7 @@ export function MessageInput({ placeholder, onSend, onSendFiles, onTyping }: Pro
           </div>
           <button
             onClick={submit}
-            disabled={value.trim().length === 0 || uploading}
+            disabled={(value.trim().length === 0 && files.length === 0) || uploading}
             className="flex items-center gap-1 bg-slack-accent text-white text-xs font-bold px-2.5 py-1 rounded disabled:bg-gray-300"
           >
             <Send size={12} />

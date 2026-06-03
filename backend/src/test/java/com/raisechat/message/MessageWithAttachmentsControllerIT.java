@@ -82,20 +82,63 @@ class MessageWithAttachmentsControllerIT {
                 .andExpect(jsonPath("$.attachments[0].originalFilename").value("diagram.png"));
     }
 
-    // ---------- 422 本文が空 ----------
+    // ---------- file-only: 本文が空でも添付があれば 201 ----------
 
     @Test
-    void createWithBlankBodyReturns422() throws Exception {
+    void createFileOnlyMessageWithBlankBodyReturns201() throws Exception {
         String token = login(OWNER);
-        MockMultipartFile file = new MockMultipartFile(
-                "files", "a.png", "image/png", new byte[]{1, 2, 3});
+        String url = "http://localhost:4566/raisechat-uploads/attachments/x/only.png";
+        when(objectStorage.upload(anyString(), any(), eq("image/png"))).thenReturn(url);
 
+        MockMultipartFile file = new MockMultipartFile(
+                "files", "only.png", "image/png", new byte[]{1, 2, 3});
+
+        // 本文に空白のみを送っても 422 にならず、本文は空文字に正規化される。
         mockMvc.perform(multipart("/api/channels/" + CH_GENERAL + "/messages")
                         .file(file)
                         .param("body", "   ")
                         .header("Authorization", "Bearer " + token))
-                .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.status").value(422));
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.body").value(""))
+                .andExpect(jsonPath("$.attachments.length()").value(1))
+                .andExpect(jsonPath("$.attachments[0].url").value(url));
+    }
+
+    @Test
+    void createFileOnlyMessageWithoutBodyParamReturns201() throws Exception {
+        String token = login(OWNER);
+        String url = "http://localhost:4566/raisechat-uploads/attachments/x/nobody.png";
+        when(objectStorage.upload(anyString(), any(), eq("image/png"))).thenReturn(url);
+
+        MockMultipartFile file = new MockMultipartFile(
+                "files", "nobody.png", "image/png", new byte[]{1, 2, 3});
+
+        // body パラメータを一切付けない（file-only）でも 201。
+        mockMvc.perform(multipart("/api/channels/" + CH_GENERAL + "/messages")
+                        .file(file)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.body").value(""))
+                .andExpect(jsonPath("$.attachments.length()").value(1));
+    }
+
+    @Test
+    void createFileOnlyDmMessageReturns201() throws Exception {
+        String token = login(OWNER);
+        long roomId = dmRoomIdWith(DM_PARTNER);
+        String url = "http://localhost:4566/raisechat-uploads/attachments/dm/only.png";
+        when(objectStorage.upload(anyString(), any(), eq("image/png"))).thenReturn(url);
+
+        MockMultipartFile file = new MockMultipartFile(
+                "files", "only.png", "image/png", new byte[]{8, 9});
+
+        mockMvc.perform(multipart("/api/dm/rooms/" + roomId + "/messages")
+                        .file(file)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.dmRoomId").value(roomId))
+                .andExpect(jsonPath("$.body").value(""))
+                .andExpect(jsonPath("$.attachments.length()").value(1));
     }
 
     // ---------- 422 ファイル数超過（最大 10） ----------
