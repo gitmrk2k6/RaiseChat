@@ -48,3 +48,17 @@ export async function getWorkspace(id: string): Promise<Workspace> {
   const dto = await api.get<WorkspaceDto>(`/api/workspaces/${Number(id)}`);
   return toWorkspace(dto);
 }
+
+/** POST /api/workspaces ワークスペースを新規作成する。name は 1〜64 文字（バックエンド検証）。 */
+export async function createWorkspace(input: {
+  name: string;
+  description?: string;
+}): Promise<Workspace> {
+  const description = input.description?.trim();
+  const dto = await api.post<WorkspaceDto>("/api/workspaces", {
+    name: input.name.trim(),
+    // 空文字は送らず undefined にする（description は任意）。
+    description: description ? description : undefined,
+  });
+  return toWorkspace(dto);
+}
