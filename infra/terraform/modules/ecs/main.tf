@@ -51,6 +51,11 @@ locals {
     var.invite_base_url != "" ? [
       { name = "INVITE_BASE_URL", value = var.invite_base_url },
     ] : [],
+    # 公開ベース URL。空のとき StorageProperties は endpoint/bucket から導出するが、
+    # 実 S3（S3_ENDPOINT 空）では導出が壊れる（/bucket になる）ため必ず渡す。
+    var.s3_public_base_url != "" ? [
+      { name = "S3_PUBLIC_BASE_URL", value = var.s3_public_base_url },
+    ] : [],
   )
   container_env = concat(local.base_env, local.optional_env)
 }

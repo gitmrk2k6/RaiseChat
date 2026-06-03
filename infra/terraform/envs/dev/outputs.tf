@@ -109,6 +109,17 @@ output "log_group_name" {
   value       = module.ecs.log_group_name
 }
 
+# --- storage module（アプリ用 S3）-----------------------------------------
+output "s3_bucket_name" {
+  description = "アバター/添付の S3 バケット名（ECS の S3_BUCKET に注入される）"
+  value       = module.storage.bucket_name
+}
+
+output "s3_public_base_url" {
+  description = "公開オブジェクトのベース URL（ECS の S3_PUBLIC_BASE_URL に注入される）"
+  value       = module.storage.public_base_url
+}
+
 # --- cicd module（Step 6）---------------------------------------------------
 output "deploy_role_arn" {
   description = "GitHub Actions が OIDC で assume するデプロイロールの ARN（deploy.yml の role-to-assume / repo variable AWS_DEPLOY_ROLE_ARN に設定）"

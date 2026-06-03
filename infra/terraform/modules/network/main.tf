@@ -172,6 +172,20 @@ resource "aws_vpc_security_group_ingress_rule" "alb_https" {
   ip_protocol       = "tcp"
 }
 
+# HTTP:80 も常に開ける。理由は2つ:
+#   - certificate_arn 未指定（ドメイン/ACM 未整備）のとき ecs module は HTTP:80 で
+#     直接配信する（HTTP フォールバック）。
+#   - certificate_arn 指定時は 80 を HTTPS:443 へリダイレクトするリスナーが立つ。
+# どちらの場合も 80 を閉じていると到達できないため、SG は 80/443 を両方許可する。
+resource "aws_vpc_security_group_ingress_rule" "alb_http" {
+  security_group_id = aws_security_group.alb.id
+  description       = "HTTP from internet (fallback or redirect to HTTPS)"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 80
+  to_port           = 80
+  ip_protocol       = "tcp"
+}
+
 resource "aws_vpc_security_group_egress_rule" "alb_all" {
   security_group_id = aws_security_group.alb.id
   description       = "allow all egress"
