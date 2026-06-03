@@ -13,6 +13,7 @@ import {
   listChannelMessages,
   listReplies,
   removeReaction,
+  sendChannelMessageWithFiles,
 } from "@/lib/api/messages";
 import { markChannelRead } from "@/lib/api/notifications";
 import { queryKeys } from "@/lib/api/queryKeys";
@@ -262,6 +263,11 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
     publishChannelMessage(params.channelId, body);
   };
 
+  // 添付つき送信は REST(multipart)。確定はチャンネル購読の MESSAGE_CREATED 受信で反映される。
+  const sendFiles = async (body: string, files: File[]) => {
+    await sendChannelMessageWithFiles(params.channelId, body, files);
+  };
+
   // typing: 入力中の送信（throttle）と、他メンバーの「入力中…」受信。
   const notifyTyping = useTypingNotifier(() => publishChannelTyping(params.channelId));
   const typers = useTypingIndicator(`/topic/channels/${params.channelId}/typing`, meId);
@@ -338,6 +344,7 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
         <MessageInput
           placeholder={`#${channel.name} へのメッセージ`}
           onSend={send}
+          onSendFiles={sendFiles}
           onTyping={notifyTyping}
         />
       </div>

@@ -10,6 +10,7 @@ import {
   editMessage,
   listDmMessages,
   removeReaction,
+  sendDmMessageWithFiles,
 } from "@/lib/api/messages";
 import { markDmRead } from "@/lib/api/notifications";
 import { queryKeys } from "@/lib/api/queryKeys";
@@ -155,6 +156,11 @@ export default function DmPage({
     publishDmMessage(params.dmId, body);
   };
 
+  // 添付つき送信は REST(multipart)。確定は DM 購読の MESSAGE_CREATED 受信で反映される。
+  const sendFiles = async (body: string, files: File[]) => {
+    await sendDmMessageWithFiles(params.dmId, body, files);
+  };
+
   // typing: 入力中の送信（throttle）と、相手の「入力中…」受信。
   const notifyTyping = useTypingNotifier(() => publishDmTyping(params.dmId));
   const typers = useTypingIndicator(`/topic/dm/${params.dmId}/typing`, meId);
@@ -220,6 +226,7 @@ export default function DmPage({
       <MessageInput
         placeholder={`${partnerName} へのメッセージ`}
         onSend={send}
+        onSendFiles={sendFiles}
         onTyping={notifyTyping}
       />
     </div>

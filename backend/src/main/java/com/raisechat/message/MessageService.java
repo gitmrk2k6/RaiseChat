@@ -22,6 +22,7 @@ import com.raisechat.message.exception.MessageForbiddenException;
 import com.raisechat.message.exception.MessageNotFoundException;
 import com.raisechat.notification.NotificationService;
 import com.raisechat.user.UserRepository;
+import com.raisechat.workspace.Workspace;
 import com.raisechat.workspace.WorkspaceMemberRepository;
 import com.raisechat.workspace.WorkspaceRole;
 import jakarta.persistence.EntityManager;
@@ -33,6 +34,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -149,21 +151,7 @@ public class MessageService {
                 .orElseThrow(() -> new MessageNotFoundException(channelId));
         requireChannelMember(channelId, userId);
 
-        Message message = new Message();
-        message.setWorkspace(channel.getWorkspace());
-        message.setChannel(channel);
-        message.setAuthor(userRepository.getReferenceById(userId));
-        message.setBody(req.body());
-
-        if (req.parentMessageId() != null) {
-            Message parent = messageRepository.findById(req.parentMessageId())
-                    .filter(p -> p.getDeletedAt() == null)
-                    .orElseThrow(() -> new MessageNotFoundException(req.parentMessageId()));
-            message.setParent(parent);
-        }
-
-        messageRepository.saveAndFlush(message);
-        entityManager.refresh(message);
+        Message message = buildMessage(channel.getWorkspace(), channel, null, userId, req.body(), req.parentMessageId());
 
         List<Long> mentionedUserIds = mentionService.syncMentions(message);
         MessageResponse dto = MessageResponse.from(message, mentionedUserIds);
@@ -177,26 +165,84 @@ public class MessageService {
                 .orElseThrow(() -> new MessageNotFoundException(dmRoomId));
         dmService.requireDmMember(dmRoomId, userId);
 
-        Message message = new Message();
-        message.setWorkspace(dmRoom.getWorkspace());
-        message.setDmRoom(dmRoom);
-        message.setAuthor(userRepository.getReferenceById(userId));
-        message.setBody(req.body());
-
-        if (req.parentMessageId() != null) {
-            Message parent = messageRepository.findById(req.parentMessageId())
-                    .filter(p -> p.getDeletedAt() == null)
-                    .orElseThrow(() -> new MessageNotFoundException(req.parentMessageId()));
-            message.setParent(parent);
-        }
-
-        messageRepository.saveAndFlush(message);
-        entityManager.refresh(message);
+        Message message = buildMessage(dmRoom.getWorkspace(), null, dmRoom, userId, req.body(), req.parentMessageId());
 
         List<Long> mentionedUserIds = mentionService.syncMentions(message);
         MessageResponse dto = MessageResponse.from(message, mentionedUserIds);
         publishCreated(message, dto, mentionedUserIds);
         return dto;
+    }
+
+    /**
+     * F-10: チャンネルへ本文＋ファイルを一括投稿する（composer の添付フロー）。
+     * メッセージ作成→各ファイルを添付（S3 アップロード）→添付込みで MESSAGE_CREATED を 1 回だけ配信する。
+     * これにより送信者・他メンバーともリアルタイムに添付付きで描画できる（添付だけ別 API のような遅延がない）。
+     */
+    @Transactional
+    public MessageResponse sendChannelMessageWithAttachments(
+            Long userId, Long channelId, String body, Long parentMessageId, List<MultipartFile> files) {
+        Channel channel = channelRepository.findByIdAndDeletedAtIsNull(channelId)
+                .orElseThrow(() -> new MessageNotFoundException(channelId));
+        requireChannelMember(channelId, userId);
+
+        Message message = buildMessage(channel.getWorkspace(), channel, null, userId, body, parentMessageId);
+        List<AttachmentResponse> attachments = uploadAll(userId, message, files);
+
+        List<Long> mentionedUserIds = mentionService.syncMentions(message);
+        MessageResponse dto = MessageResponse.from(message, mentionedUserIds, attachments);
+        publishCreated(message, dto, mentionedUserIds);
+        return dto;
+    }
+
+    /** F-10: DM ルームへ本文＋ファイルを一括投稿する（チャンネル版と同じく添付込みで 1 回配信）。 */
+    @Transactional
+    public MessageResponse sendDmMessageWithAttachments(
+            Long userId, Long dmRoomId, String body, Long parentMessageId, List<MultipartFile> files) {
+        DmRoom dmRoom = dmRoomRepository.findActiveByIdWithUsers(dmRoomId)
+                .orElseThrow(() -> new MessageNotFoundException(dmRoomId));
+        dmService.requireDmMember(dmRoomId, userId);
+
+        Message message = buildMessage(dmRoom.getWorkspace(), null, dmRoom, userId, body, parentMessageId);
+        List<AttachmentResponse> attachments = uploadAll(userId, message, files);
+
+        List<Long> mentionedUserIds = mentionService.syncMentions(message);
+        MessageResponse dto = MessageResponse.from(message, mentionedUserIds, attachments);
+        publishCreated(message, dto, mentionedUserIds);
+        return dto;
+    }
+
+    // メッセージ本体を生成して保存する（チャンネル/DM 共通）。channel か dmRoom のどちらかを渡す。
+    private Message buildMessage(
+            Workspace workspace, Channel channel, DmRoom dmRoom,
+            Long userId, String body, Long parentMessageId) {
+        Message message = new Message();
+        message.setWorkspace(workspace);
+        if (channel != null) {
+            message.setChannel(channel);
+        }
+        if (dmRoom != null) {
+            message.setDmRoom(dmRoom);
+        }
+        message.setAuthor(userRepository.getReferenceById(userId));
+        message.setBody(body);
+
+        if (parentMessageId != null) {
+            Message parent = messageRepository.findById(parentMessageId)
+                    .filter(p -> p.getDeletedAt() == null)
+                    .orElseThrow(() -> new MessageNotFoundException(parentMessageId));
+            message.setParent(parent);
+        }
+
+        messageRepository.saveAndFlush(message);
+        entityManager.refresh(message);
+        return message;
+    }
+
+    // 直前に作成したメッセージへ各ファイルを添付する。検証（MIME/サイズ/権限）は AttachmentService に委譲。
+    private List<AttachmentResponse> uploadAll(Long userId, Message message, List<MultipartFile> files) {
+        return files.stream()
+                .map(file -> attachmentService.upload(userId, message.getId(), file))
+                .toList();
     }
 
     @Transactional

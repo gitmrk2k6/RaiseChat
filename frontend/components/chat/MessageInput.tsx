@@ -1,23 +1,37 @@
 "use client";
 
-import { useState, useRef, KeyboardEvent } from "react";
-import { Bold, Italic, Code, List, Paperclip, AtSign, Smile, Send } from "lucide-react";
+import { useState, useRef, KeyboardEvent, ChangeEvent } from "react";
+import { Bold, Italic, Code, List, Paperclip, AtSign, Smile, Send, X, FileText } from "lucide-react";
 import { users, currentUserId } from "@/lib/mock/users";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmojiPickerPopover } from "@/components/chat/EmojiPickerPopover";
 
+// バックエンド（AttachmentService）の許可 MIME / サイズと一致させる。事前にクライアントでも弾く。
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4"];
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_FILES = 10;
+
 interface Props {
   placeholder: string;
   onSend: (body: string) => void;
+  /**
+   * 添付つき送信（F-10）。指定された場合のみクリップ（ファイル添付）が有効になる。
+   * 確定は WS の MESSAGE_CREATED 受信で行うため、ここでは送信完了を待つ Promise を返すだけでよい。
+   */
+  onSendFiles?: (body: string, files: File[]) => Promise<void>;
   /** 入力中（typing）通知。打鍵のたびに呼ぶ（throttle は呼び出し側の責務）。 */
   onTyping?: () => void;
 }
 
-export function MessageInput({ placeholder, onSend, onTyping }: Props) {
+export function MessageInput({ placeholder, onSend, onSendFiles, onTyping }: Props) {
   const [value, setValue] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [showEmoji, setShowEmoji] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleChange = (v: string) => {
     setValue(v);
@@ -45,9 +59,58 @@ export function MessageInput({ placeholder, onSend, onTyping }: Props) {
     textareaRef.current?.focus();
   };
 
+  const onFilesSelected = (e: ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? []);
+    e.target.value = ""; // 同じファイルを連続で選び直せるよう入力をリセットする。
+    const errors: string[] = [];
+    const valid: File[] = [];
+    for (const f of picked) {
+      if (!ALLOWED_TYPES.includes(f.type)) {
+        errors.push(`${f.name}: 未対応の形式です`);
+      } else if (f.size > MAX_FILE_BYTES) {
+        errors.push(`${f.name}: 10MB を超えています`);
+      } else {
+        valid.push(f);
+      }
+    }
+    setFiles((prev) => {
+      const merged = [...prev, ...valid];
+      if (merged.length > MAX_FILES) {
+        errors.push(`添付できるファイルは最大 ${MAX_FILES} 件です`);
+        return merged.slice(0, MAX_FILES);
+      }
+      return merged;
+    });
+    setFileError(errors.length > 0 ? errors.join(" / ") : null);
+  };
+
+  const removeFile = (idx: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== idx));
+    setFileError(null);
+  };
+
   const submit = () => {
-    if (value.trim().length === 0) return;
-    onSend(value.trim());
+    const body = value.trim();
+    // DB 制約（本文 1〜4000 文字）に合わせ、添付の有無に関わらず本文は必須。
+    if (body.length === 0 || uploading) return;
+
+    if (files.length > 0 && onSendFiles) {
+      setUploading(true);
+      void Promise.resolve(onSendFiles(body, files))
+        .then(() => {
+          setValue("");
+          setFiles([]);
+          setMentionQuery(null);
+          setFileError(null);
+        })
+        .catch((err) => {
+          setFileError(err instanceof Error ? err.message : "送信に失敗しました");
+        })
+        .finally(() => setUploading(false));
+      return;
+    }
+
+    onSend(body);
     setValue("");
     setMentionQuery(null);
   };
@@ -100,6 +163,36 @@ export function MessageInput({ placeholder, onSend, onTyping }: Props) {
       )}
 
       <div className="border border-gray-300 rounded-lg focus-within:border-gray-500 transition bg-white">
+        {files.length > 0 && (
+          <div className="flex flex-wrap gap-2 px-3 pt-3">
+            {files.map((f, i) => {
+              const isImage = f.type.startsWith("image/");
+              const preview = isImage ? URL.createObjectURL(f) : null;
+              return (
+                <div
+                  key={`${f.name}-${i}`}
+                  className="flex items-center gap-2 border border-gray-200 rounded-md pl-1.5 pr-1 py-1 bg-gray-50 max-w-[220px]"
+                >
+                  {preview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={preview} alt={f.name} className="w-8 h-8 rounded object-cover" />
+                  ) : (
+                    <FileText size={18} className="text-gray-500 shrink-0" />
+                  )}
+                  <span className="text-xs text-gray-700 truncate">{f.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeFile(i)}
+                    title="削除"
+                    className="text-gray-400 hover:text-gray-700 p-0.5 rounded hover:bg-gray-200 shrink-0"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           value={value}
@@ -125,9 +218,21 @@ export function MessageInput({ placeholder, onSend, onTyping }: Props) {
               <List size={14} />
             </ToolbarBtn>
             <span className="w-px h-4 bg-gray-300 mx-1" />
-            <ToolbarBtn label="ファイル添付（モック）" onClick={() => alert("ファイル添付（モック）")}>
-              <Paperclip size={14} />
-            </ToolbarBtn>
+            {onSendFiles && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept={ALLOWED_TYPES.join(",")}
+                  onChange={onFilesSelected}
+                  className="hidden"
+                />
+                <ToolbarBtn label="ファイル添付" onClick={() => fileInputRef.current?.click()}>
+                  <Paperclip size={14} />
+                </ToolbarBtn>
+              </>
+            )}
             <ToolbarBtn label="メンション" onClick={() => insertAtCursor("@")}>
               <AtSign size={14} />
             </ToolbarBtn>
@@ -137,14 +242,15 @@ export function MessageInput({ placeholder, onSend, onTyping }: Props) {
           </div>
           <button
             onClick={submit}
-            disabled={value.trim().length === 0}
+            disabled={value.trim().length === 0 || uploading}
             className="flex items-center gap-1 bg-slack-accent text-white text-xs font-bold px-2.5 py-1 rounded disabled:bg-gray-300"
           >
             <Send size={12} />
-            送信
+            {uploading ? "送信中…" : "送信"}
           </button>
         </div>
       </div>
+      {fileError && <div className="text-xs text-red-600 mt-1 px-1">{fileError}</div>}
       <div className="text-xs text-gray-400 mt-1 px-1">
         Markdown対応 / Enter: 送信 / Shift+Enter: 改行
       </div>
