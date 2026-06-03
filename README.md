@@ -17,14 +17,15 @@ Slack 風チャット Web アプリケーション。RaiseTech AI エンジニ�
 | ドキュメント | 内容 |
 | --- | --- |
 | [docs/requirements.md](docs/requirements.md) | 要件定義書（ハブ）。機能要件・非機能要件・スコープ外 |
-| [docs/functional-requirements.md](docs/functional-requirements.md) | 機能要件書。F-01〜F-16 の機能定義・バリデーション・ユースケース |
+| [docs/functional-requirements.md](docs/functional-requirements.md) | 機能要件書。F-01〜F-17 の機能定義・バリデーション・ユースケース |
 | [docs/why-slack.md](docs/why-slack.md) | 「Slack 風」発注意図の解釈と競合比較・スコープ判断の根拠 |
-| `docs/screen-design.md` | 画面設計書（設計フェーズで作成予定） |
+| [docs/screen-design.md](docs/screen-design.md) | 画面設計書。画面一覧・ワイヤーフレーム・画面遷移図 |
 | [docs/database-design.md](docs/database-design.md) | データベース設計書。14 テーブル定義・Flyway 運用ルール・docker-compose 構成方針 |
-| `docs/tech-stack.md` | 技術スタック詳細（設計フェーズで作成予定） |
-| `docs/infrastructure.md` | インフラ構成（設計フェーズ〜実装フェーズで作成予定） |
-| `docs/realtime-design.md` | WebSocket / STOMP / Redis Pub-Sub 設計（設計フェーズで作成予定） |
-| `docs/cache-strategy.md` | Redis キャッシュ戦略（設計フェーズで作成予定） |
+| [docs/api-design.md](docs/api-design.md) | API 設計書。REST エンドポイント・リクエスト / レスポンス仕様 |
+| [docs/tech-stack.md](docs/tech-stack.md) | 技術スタック詳細。採用技術・バージョン一覧 |
+| [docs/infrastructure.md](docs/infrastructure.md) | インフラ構成。AWS 構成図・ネットワーク・冗長化・CI/CD・Ansible |
+| [docs/realtime-design.md](docs/realtime-design.md) | WebSocket / STOMP / Redis Pub-Sub 設計 |
+| [docs/cache-strategy.md](docs/cache-strategy.md) | Redis キャッシュ戦略・TTL 設計 |
 | [CLAUDE.md](CLAUDE.md) | Claude Code 利用時のルール（命名規則・GitHub フロー・ポート） |
 
 ---
@@ -51,23 +52,24 @@ Slack 風チャット Web アプリケーション。RaiseTech AI エンジニ�
 | F-14 通知 | 未読メッセージ数・メンション通知 |
 | F-15 招待機能 | オーナーがワークスペース / チャンネルに招待 |
 | F-16 管理者操作 | オーナーによるユーザーキック・チャンネル削除 |
+| F-17 プレゼンス / タイピング | オンライン状態表示・入力中インジケータ（WebSocket） |
 
 ---
 
-## 技術スタック（暫定）
+## 技術スタック
 
-確定版は設計フェーズで `docs/tech-stack.md` を作成する。
+採用技術・バージョンの確定版は [docs/tech-stack.md](docs/tech-stack.md) を参照（実ファイル `build.gradle` / `package.json` / `docker-compose.yml` を正とする）。
 
 | レイヤー | 主要技術 |
 | --- | --- |
-| フロントエンド | Next.js 14.x + TypeScript + Tailwind CSS |
-| バックエンド | Spring Boot 3.x + Java 21 |
+| フロントエンド | Next.js 14.2.35 + TypeScript 5 + Tailwind CSS 3.4 |
+| バックエンド | Spring Boot 3.5.14 + Java 21 |
 | リアルタイム通信 | WebSocket（STOMP over SockJS） |
 | データベース | PostgreSQL 17 |
 | キャッシュ / Pub-Sub | Redis 7 系 |
-| 認証 | Spring Security + JWT（JJWT） |
-| ファイルストレージ | AWS S3 |
-| インフラ | AWS / Render のいずれか（後続講義に合わせて決定） |
+| 認証 | Spring Security + JWT（JJWT 0.12.6） |
+| ファイルストレージ | AWS S3（ローカルは LocalStack） |
+| インフラ | AWS（ECS Fargate + RDS + ElastiCache + ALB + S3）。詳細は [docs/infrastructure.md](docs/infrastructure.md) |
 
 ---
 
@@ -78,10 +80,10 @@ Slack 風チャット Web アプリケーション。RaiseTech AI エンジニ�
 | フェーズ | 内容 | 状態 |
 | --- | --- | --- |
 | ① 要件定義 | `why-slack.md` / `requirements.md` / `functional-requirements.md` を作成 | ✅ 完了 |
-| ② 設計 | 画面・DB・技術スタック・インフラ・リアルタイム / キャッシュ設計を確定 | 🚧 DB 設計完了、他は未着手 |
-| ③ 実装 | バックエンド機能 → フロントエンド → 結合 | 🚧 backend 雛形＋初期スキーマ着手 |
-| ④ 自動レビュー導入 | 実装が一通り揃った後半で `.github/workflows/claude-code-review.yml` を導入し、複数機能が乗った PR で動作確認（トークン消費を考慮し、最終課題提出時の運用方針は別途判断） | ⏳ |
-| ⑤ デプロイ・運用 | AWS / Render どちらかへの自動デプロイ、Ansible、監視 | ⏳ |
+| ② 設計 | 画面・DB・API・技術スタック・インフラ・リアルタイム / キャッシュ設計を確定 | ✅ 完了 |
+| ③ 実装 | バックエンド機能 → フロントエンド → 結合 | ✅ MVP（F-01〜F-17）完了・フロント結合済 |
+| ④ 自動レビュー導入 | `.github/workflows/claude-code-review.yml` を導入。トークン消費を抑えるため `review` ラベル付与時に手動起動 | ✅ 導入済 |
+| ⑤ デプロイ・運用 | AWS への自動デプロイ（GitHub Actions → ECR → ECS）、Ansible、監視 | 🚧 Terraform / デプロイ / 監視 / Ansible 着手済 |
 
 ---
 
