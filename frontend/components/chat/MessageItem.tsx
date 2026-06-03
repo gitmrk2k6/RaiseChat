@@ -110,9 +110,9 @@ export function MessageItem({
                 </button>
               </div>
             </div>
-          ) : (
+          ) : message.body.trim().length > 0 ? (
             <MarkdownRenderer body={message.body} />
-          )}
+          ) : null}
 
           {/* Attachments */}
           {message.attachments.length > 0 && (
