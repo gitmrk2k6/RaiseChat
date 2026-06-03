@@ -4,6 +4,7 @@ import { useState, useRef, KeyboardEvent } from "react";
 import { Bold, Italic, Code, List, Paperclip, AtSign, Smile, Send } from "lucide-react";
 import { users, currentUserId } from "@/lib/mock/users";
 import { Avatar } from "@/components/ui/Avatar";
+import { EmojiPickerPopover } from "@/components/chat/EmojiPickerPopover";
 
 interface Props {
   placeholder: string;
@@ -15,6 +16,7 @@ interface Props {
 export function MessageInput({ placeholder, onSend, onTyping }: Props) {
   const [value, setValue] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [showEmoji, setShowEmoji] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleChange = (v: string) => {
@@ -71,6 +73,13 @@ export function MessageInput({ placeholder, onSend, onTyping }: Props) {
 
   return (
     <div className="px-5 pb-5 relative">
+      {showEmoji && (
+        <EmojiPickerPopover
+          onPick={(emoji) => insertAtCursor(emoji)}
+          onClose={() => setShowEmoji(false)}
+        />
+      )}
+
       {suggestions.length > 0 && (
         <div className="absolute bottom-full left-5 right-5 mb-1 bg-white border rounded-md shadow-lg overflow-hidden z-10">
           <div className="px-3 py-1.5 text-xs font-bold text-gray-500 border-b bg-gray-50">
@@ -122,7 +131,7 @@ export function MessageInput({ placeholder, onSend, onTyping }: Props) {
             <ToolbarBtn label="メンション" onClick={() => insertAtCursor("@")}>
               <AtSign size={14} />
             </ToolbarBtn>
-            <ToolbarBtn label="絵文字（モック）" onClick={() => insertAtCursor("😀 ")}>
+            <ToolbarBtn label="絵文字" onClick={() => setShowEmoji((v) => !v)}>
               <Smile size={14} />
             </ToolbarBtn>
           </div>
