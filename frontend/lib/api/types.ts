@@ -69,6 +69,20 @@ export interface WorkspaceDto {
   createdAt: string;
 }
 
+/** ワークスペースメンバー（WorkspaceMemberResponse）。id は user の数値 ID。 */
+export interface WorkspaceMemberDto {
+  id: number;
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  role: "OWNER" | "MEMBER";
+}
+
+/** GET /api/workspaces/{wsId} 詳細（WorkspaceDetailResponse）。一覧の WorkspaceDto に members を加えたもの。 */
+export interface WorkspaceDetailDto extends WorkspaceDto {
+  members: WorkspaceMemberDto[];
+}
+
 /** GET /api/workspaces/{wsId}/channels のレスポンス要素（Channel）。id は数値（BIGINT）。 */
 export interface ChannelDto {
   id: number;

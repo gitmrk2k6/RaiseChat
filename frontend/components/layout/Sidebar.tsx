@@ -15,6 +15,7 @@ import { usePresence } from "@/lib/presence/PresenceContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/utils";
 import { CreateChannelModal } from "@/components/modals/CreateChannelModal";
+import { NewDmModal } from "@/components/modals/NewDmModal";
 
 export function Sidebar() {
   const params = useParams<{ workspaceId: string; channelId?: string; dmId?: string }>();
@@ -44,6 +45,7 @@ export function Sidebar() {
   const [channelsOpen, setChannelsOpen] = useState(true);
   const [dmsOpen, setDmsOpen] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
+  const [newDmOpen, setNewDmOpen] = useState(false);
 
   return (
     <>
@@ -59,8 +61,9 @@ export function Sidebar() {
             </div>
           </div>
           <button
+            onClick={() => setNewDmOpen(true)}
             className="text-white p-1.5 rounded hover:bg-white/10"
-            title="メッセージ作成（モック）"
+            title="メッセージを作成"
           >
             <Edit3 size={16} />
           </button>
@@ -152,6 +155,11 @@ export function Sidebar() {
       </aside>
 
       <CreateChannelModal open={createOpen} onClose={() => setCreateOpen(false)} />
+      <NewDmModal
+        open={newDmOpen}
+        onClose={() => setNewDmOpen(false)}
+        workspaceId={workspaceId}
+      />
     </>
   );
 }

@@ -3,8 +3,9 @@
 // API に無い表示専用フィールド（initial / color）はここで決定的に補完する。
 
 import { api } from "./client";
-import type { Page, WorkspaceDto } from "./types";
-import type { Workspace } from "@/types";
+import type { Page, WorkspaceDetailDto, WorkspaceDto } from "./types";
+import { avatarColorFor } from "./messages";
+import type { Workspace, WorkspaceMember } from "@/types";
 
 // ワークスペースアイコンの背景色パレット（Slack 風）。id から決定的に 1 色を選ぶ。
 const WORKSPACE_COLORS = [
@@ -47,6 +48,21 @@ export async function listWorkspaces(): Promise<Workspace[]> {
 export async function getWorkspace(id: string): Promise<Workspace> {
   const dto = await api.get<WorkspaceDto>(`/api/workspaces/${Number(id)}`);
   return toWorkspace(dto);
+}
+
+/**
+ * GET /api/workspaces/{wsId} の members を取り出す（詳細 API は一覧 + members を返す）。
+ * id を string 化し、表示用 avatarColor を id から決定論的に補完する（DM 一覧と同方針）。
+ */
+export async function getWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
+  const dto = await api.get<WorkspaceDetailDto>(`/api/workspaces/${Number(workspaceId)}`);
+  return dto.members.map((m) => ({
+    id: String(m.id),
+    userId: m.userId,
+    displayName: m.displayName,
+    avatarColor: avatarColorFor(String(m.id)),
+    role: m.role,
+  }));
 }
 
 /** POST /api/workspaces ワークスペースを新規作成する。name は 1〜64 文字（バックエンド検証）。 */

@@ -18,6 +18,15 @@ export interface Workspace {
   ownerId: ID;
 }
 
+/** ワークスペースのメンバー（GET /api/workspaces/{wsId} の members 由来）。 */
+export interface WorkspaceMember {
+  id: ID;
+  userId: string;
+  displayName: string;
+  avatarColor: string;
+  role: "OWNER" | "MEMBER";
+}
+
 export interface Channel {
   id: ID;
   workspaceId: ID;
