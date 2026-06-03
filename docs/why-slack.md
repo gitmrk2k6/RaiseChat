@@ -133,10 +133,10 @@ Slack はパーソナルな SNS ではなく、**仕事のコミュニケーシ�
 | **WebSocket リアルタイム通信** | Spring Boot の STOMP over WebSocket でメッセージ・リアクション・タイピング表示等をプッシュ配信 |
 | **Redis キャッシュ戦略** | 直近メッセージ・チャンネル一覧・未読カウンタ等を Redis に寄せ、DB 負荷を下げる |
 | **冗長化構成 / スケーリング** | バックエンドを複数インスタンス化した際に Redis Pub/Sub を介してメッセージをブロードキャストする（STOMP の単一プロセス限界を超える設計） |
-| **自動デプロイ / IaC / Ansible** | 後続講義に合わせて AWS（ECS Fargate + ElastiCache 等）または Render を選定。Ansible でのプロビジョニングも検討 |
+| **自動デプロイ / IaC / Ansible** | AWS（ECS Fargate + ElastiCache + RDS + ALB + S3）を採用。Terraform による IaC、GitHub Actions → ECR → ECS の自動デプロイ、運用 EC2(bastion) を題材にした Ansible プロビジョニングまで実装（[docs/infrastructure.md](infrastructure.md)） |
 | **Claude Code 自動コードレビュー** | 実装が一通り揃った段階で `.github/workflows/claude-code-review.yml` を導入し、複数機能が乗った PR で動作確認（トークン消費を考慮し、最終課題提出時の運用判断は別途） |
 
-これらは要件定義書の **第 4 章「非機能要件」** に **目標値**（例: メッセージ送信から表示まで 1 秒以内、複数バックエンドインスタンス間でメッセージブロードキャスト可能）として落とし込む。実装方式（STOMP / Pub/Sub の選択）は機能要件側には書かず、設計フェーズ（`docs/realtime-design.md` / `docs/cache-strategy.md` — 後続作成）で詰める。
+これらは要件定義書の **第 4 章「非機能要件」** に **目標値**（例: メッセージ送信から表示まで 1 秒以内、複数バックエンドインスタンス間でメッセージブロードキャスト可能）として落とし込む。実装方式（STOMP / Pub/Sub の選択）は機能要件側には書かず、設計フェーズの [docs/realtime-design.md](realtime-design.md) / [docs/cache-strategy.md](cache-strategy.md) で確定済み。
 
 ---
 

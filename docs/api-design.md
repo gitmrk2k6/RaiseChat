@@ -27,10 +27,10 @@ WebSocket / STOMP のメッセージプロトコルは本書のスコープ外�
 
 | トピック | 担当ドキュメント |
 | --- | --- |
-| WebSocket / STOMP / Redis Pub-Sub | `docs/realtime-design.md`（後続作成） |
-| F-09〜F-16 の API（マークダウン・添付・リアクション・メンション・検索・通知・招待・管理） | 別 PR で本書に追補予定 |
+| WebSocket / STOMP / Redis Pub-Sub | [docs/realtime-design.md](realtime-design.md) |
+| F-10 / F-12 / F-13 / F-14 / F-16 の API（添付・メンション・検索・通知・管理） | 実装済だが本書未記載。別 PR で本書に追補予定 |
 | Redis キャッシュキー設計 | [docs/cache-strategy.md](cache-strategy.md) |
-| 画面遷移・ワイヤーフレーム | `docs/screen-design.md`（後続作成） |
+| 画面遷移・ワイヤーフレーム | [docs/screen-design.md](screen-design.md) |
 
 ---
 
@@ -898,7 +898,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ## 6. WebSocket との境界
 
-REST と WebSocket の責務分担を明示する。WebSocket メッセージプロトコルの詳細は `docs/realtime-design.md`（後続作成）で定義する。
+REST と WebSocket の責務分担を明示する。WebSocket メッセージプロトコルの詳細は [docs/realtime-design.md](realtime-design.md) で定義済み。
 
 | 操作 | 経路 | 理由 |
 | --- | --- | --- |
