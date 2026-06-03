@@ -2,6 +2,7 @@ package com.raisechat.channel;
 
 import com.raisechat.channel.dto.ChannelInviteResponse;
 import com.raisechat.channel.dto.ChannelListResponse;
+import com.raisechat.channel.dto.ChannelMemberResponse;
 import com.raisechat.channel.dto.ChannelResponse;
 import com.raisechat.channel.dto.CreateChannelRequest;
 import com.raisechat.channel.exception.ChannelConflictException;
@@ -319,6 +320,59 @@ public class ChannelService {
         }
 
         return ChannelResponse.from(channel);
+    }
+
+    /** チャンネルのアクティブメンバー一覧を返す（チャンネルを閲覧できるユーザーのみ）。 */
+    @Transactional(readOnly = true)
+    public List<ChannelMemberResponse> listMembers(Long userId, Long channelId) {
+        Channel channel = channelRepository.findByIdAndDeletedAtIsNull(channelId)
+                .orElseThrow(() -> new ChannelNotFoundException(channelId));
+
+        requireChannelVisible(channel, userId);
+
+        return channelMemberRepository.findActiveByChannelIdWithUser(channelId).stream()
+                .map(ChannelMemberResponse::from)
+                .toList();
+    }
+
+    /**
+     * チャンネルからメンバーを除外（キック）する。
+     * 認可は OWNER または作成者（チャンネル削除と同じモデル）。general は除外不可・自分自身も不可。
+     * 対象が現在のメンバーでなければ冪等に no-op。除外時は対象に channelRemoved 通知＋未読クリアで即時反映する。
+     */
+    @Transactional
+    public void kickMember(Long actorUserId, Long channelId, Long targetUserId) {
+        Channel channel = channelRepository.findByIdAndDeletedAtIsNull(channelId)
+                .orElseThrow(() -> new ChannelNotFoundException(channelId));
+
+        WorkspaceMember wsMember = workspaceMemberRepository
+                .findByWorkspaceIdAndUserIdAndLeftAtIsNull(channel.getWorkspace().getId(), actorUserId)
+                .orElseThrow(() -> new ChannelForbiddenException(
+                        "ワークスペースのメンバーではありません: channelId=" + channelId));
+
+        boolean isOwner = wsMember.getRole() == WorkspaceRole.OWNER;
+        boolean isCreator = channel.getCreatedBy().getId().equals(actorUserId);
+        if (!isOwner && !isCreator) {
+            throw new ChannelForbiddenException(
+                    "OWNER または作成者のみメンバーを削除できます: channelId=" + channelId);
+        }
+
+        if (targetUserId.equals(actorUserId)) {
+            throw new ChannelConflictException("自分自身は削除できません（退出を使ってください）");
+        }
+
+        if (GENERAL_CHANNEL_NAME.equalsIgnoreCase(channel.getName())) {
+            throw new ChannelConflictException("general チャンネルからは削除できません");
+        }
+
+        // アクティブメンバーなら論理退出させ、対象の画面から当該チャンネルを即座に消す。
+        // チャンネル削除（delete）と同じ後始末で未読バッジ・サイドバーを掃除する。
+        channelMemberRepository.findByChannelIdAndUserIdAndLeftAtIsNull(channelId, targetUserId)
+                .ifPresent(member -> {
+                    member.setLeftAt(OffsetDateTime.now());
+                    unreadCounterStore.clear(targetUserId, UnreadCounterStore.channelField(channelId));
+                    notificationPublisher.publish(targetUserId, NotificationEvent.channelRemoved(channelId));
+                });
     }
 
     // 招待を無効化する。無効化できるのはチャンネルのアクティブメンバーのみ。

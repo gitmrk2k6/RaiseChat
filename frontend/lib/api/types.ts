@@ -83,6 +83,14 @@ export interface WorkspaceDetailDto extends WorkspaceDto {
   members: WorkspaceMemberDto[];
 }
 
+/** GET /api/channels/{id}/members の要素（ChannelMemberResponse）。チャンネルメンバーにロールは無い。 */
+export interface ChannelMemberDto {
+  id: number;
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
+
 /** GET /api/workspaces/{wsId}/channels のレスポンス要素（Channel）。id は数値（BIGINT）。 */
 export interface ChannelDto {
   id: number;

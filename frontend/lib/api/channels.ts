@@ -7,8 +7,9 @@
 //  - memberIds → []（一覧 API に含まれない）
 
 import { api } from "./client";
-import type { ChannelDto, Page } from "./types";
-import type { Channel } from "@/types";
+import { avatarColorFor } from "./messages";
+import type { ChannelDto, ChannelMemberDto, Page } from "./types";
+import type { Channel, WorkspaceMember } from "@/types";
 
 /** ChannelDto → フロントの Channel。id を string 化し、type を小文字へ正規化する。 */
 export function toChannel(dto: ChannelDto): Channel {
@@ -71,4 +72,24 @@ export async function addChannelMembers(
     { userIds: userIds.map(Number) },
   );
   return toChannel(dto);
+}
+
+/**
+ * GET /api/channels/{id}/members チャンネルのアクティブメンバー一覧。
+ * 表示用に avatarColor を id から決定論的に補完する（role はチャンネルでは無いため "MEMBER" 固定）。
+ */
+export async function getChannelMembers(channelId: string): Promise<WorkspaceMember[]> {
+  const dtos = await api.get<ChannelMemberDto[]>(`/api/channels/${Number(channelId)}/members`);
+  return dtos.map((m) => ({
+    id: String(m.id),
+    userId: m.userId,
+    displayName: m.displayName,
+    avatarColor: avatarColorFor(String(m.id)),
+    role: "MEMBER" as const,
+  }));
+}
+
+/** DELETE /api/channels/{id}/members/{userId} メンバーをチャンネルから除外（キック）する。 */
+export async function removeChannelMember(channelId: string, userId: string): Promise<void> {
+  await api.delete<void>(`/api/channels/${Number(channelId)}/members/${Number(userId)}`);
 }
