@@ -1,16 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { ApiError } from "@/lib/api/problem";
+import { safeNextPath } from "@/lib/utils";
 
 // ログイン後の遷移先。/workspaces で一覧を取得し、先頭ワークスペースの先頭チャンネルへ解決する。
+// 招待リンク等から ?next= が付いていればそちらへ戻す（オープンリダイレクトは safeNextPath で防ぐ）。
 const AFTER_LOGIN_PATH = "/workspaces";
 
+// useSearchParams は Suspense 境界を要求するため、フォーム本体を分離して包む。
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextParam = searchParams.get("next");
   const { login } = useAuth();
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
@@ -23,7 +36,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await login({ userId, password });
-      router.push(AFTER_LOGIN_PATH);
+      router.push(safeNextPath(nextParam, AFTER_LOGIN_PATH));
     } catch (err) {
       if (err instanceof ApiError) {
         setError(
@@ -84,7 +97,10 @@ export default function LoginPage() {
       </form>
       <div className="mt-6 pt-6 border-t text-center text-sm text-gray-600">
         アカウントをお持ちでない方は{" "}
-        <Link href="/signup" className="text-slack-mention font-bold hover:underline">
+        <Link
+          href={`/signup${nextParam ? `?next=${encodeURIComponent(nextParam)}` : ""}`}
+          className="text-slack-mention font-bold hover:underline"
+        >
           サインアップ
         </Link>
       </div>

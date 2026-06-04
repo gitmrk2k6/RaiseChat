@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ChevronDown, ChevronRight, Hash, Lock, Plus, Edit3 } from "lucide-react";
+import { ChevronDown, ChevronRight, Hash, Lock, Plus, Edit3, UserPlus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { listChannels } from "@/lib/api/channels";
 import { listDmRooms } from "@/lib/api/dm";
@@ -16,6 +16,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/utils";
 import { CreateChannelModal } from "@/components/modals/CreateChannelModal";
 import { NewDmModal } from "@/components/modals/NewDmModal";
+import { InviteWorkspaceModal } from "@/components/modals/InviteWorkspaceModal";
 
 export function Sidebar() {
   const params = useParams<{ workspaceId: string; channelId?: string; dmId?: string }>();
@@ -46,6 +47,10 @@ export function Sidebar() {
   const [dmsOpen, setDmsOpen] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [newDmOpen, setNewDmOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+
+  // 招待リンクの発行は OWNER のみ（バックエンドも OWNER 限定）。owner だけにボタンを出す。
+  const isOwner = !!workspace && !!meId && workspace.ownerId === meId;
 
   return (
     <>
@@ -60,13 +65,24 @@ export function Sidebar() {
               {user?.displayName ?? ""}
             </div>
           </div>
-          <button
-            onClick={() => setNewDmOpen(true)}
-            className="text-white p-1.5 rounded hover:bg-white/10"
-            title="メッセージを作成"
-          >
-            <Edit3 size={16} />
-          </button>
+          <div className="flex items-center gap-1">
+            {isOwner && (
+              <button
+                onClick={() => setInviteOpen(true)}
+                className="text-white p-1.5 rounded hover:bg-white/10"
+                title="ワークスペースに招待"
+              >
+                <UserPlus size={16} />
+              </button>
+            )}
+            <button
+              onClick={() => setNewDmOpen(true)}
+              className="text-white p-1.5 rounded hover:bg-white/10"
+              title="メッセージを作成"
+            >
+              <Edit3 size={16} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto scrollbar-thin py-2">
@@ -163,6 +179,12 @@ export function Sidebar() {
         open={newDmOpen}
         onClose={() => setNewDmOpen(false)}
         workspaceId={workspaceId}
+      />
+      <InviteWorkspaceModal
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        workspaceId={workspaceId}
+        workspaceName={workspace?.name}
       />
     </>
   );

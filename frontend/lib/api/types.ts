@@ -69,6 +69,23 @@ export interface WorkspaceDto {
   createdAt: string;
 }
 
+/**
+ * POST /api/workspaces/{wsId}/invites のレスポンス（InviteResponse, F-15）。
+ * token（平文）と inviteUrl は発行時にのみ返る（DB にはハッシュしか残らず再取得不可）。
+ * inviteUrl のベースは backend の app.invite.base-url（INVITE_BASE_URL）で決まる。
+ */
+export interface InviteDto {
+  id: number;
+  workspaceId: number;
+  token: string;
+  inviteUrl: string;
+  expiresAt: string;
+  /** 使用回数の上限。null = 無制限。 */
+  maxUses: number | null;
+  usedCount: number;
+  createdAt: string;
+}
+
 /** ワークスペースメンバー（WorkspaceMemberResponse）。id は user の数値 ID。 */
 export interface WorkspaceMemberDto {
   id: number;

@@ -3,7 +3,7 @@
 // API に無い表示専用フィールド（initial / color）はここで決定的に補完する。
 
 import { api } from "./client";
-import type { Page, WorkspaceDetailDto, WorkspaceDto } from "./types";
+import type { InviteDto, Page, WorkspaceDetailDto, WorkspaceDto } from "./types";
 import { avatarColorFor } from "./messages";
 import type { Workspace, WorkspaceMember } from "@/types";
 
@@ -76,5 +76,30 @@ export async function createWorkspace(input: {
     // 空文字は送らず undefined にする（description は任意）。
     description: description ? description : undefined,
   });
+  return toWorkspace(dto);
+}
+
+/**
+ * POST /api/workspaces/{wsId}/invites 招待リンクを発行する（OWNER のみ）。
+ * 平文 token と inviteUrl はこのレスポンスでのみ返る（DB はハッシュ保存）。
+ * expiresInHours 既定 168h(7日) / maxUses 既定 無制限（バックエンド検証）。
+ */
+export async function createWorkspaceInvite(
+  workspaceId: string,
+  opts: { expiresInHours?: number; maxUses?: number } = {},
+): Promise<InviteDto> {
+  return api.post<InviteDto>(`/api/workspaces/${Number(workspaceId)}/invites`, {
+    expiresInHours: opts.expiresInHours,
+    maxUses: opts.maxUses,
+  });
+}
+
+/**
+ * POST /api/invites/{token}/accept 招待を受諾し、呼び出しユーザーを参加させる。
+ * 参加したワークスペースを返す。既にメンバーなら冪等に成功。
+ * 不正/削除済みは 404、期限切れ/無効化/上限超過は 410（ApiError.status で判定）。
+ */
+export async function acceptInvite(token: string): Promise<Workspace> {
+  const dto = await api.post<WorkspaceDto>(`/api/invites/${encodeURIComponent(token)}/accept`);
   return toWorkspace(dto);
 }
