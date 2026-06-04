@@ -6,8 +6,19 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface MessageRepository extends JpaRepository<Message, Long> {
+
+    // WebSocket 購読認可で使う。スレッド宛先 /topic/threads/{parentMessageId} の親メッセージが
+    // どのチャンネル / DM に属すかを引き、その所属でメンバー判定する。
+    // チャンネル投稿なら channel.id が返り dmRoom.id は空、DM 投稿ならその逆。
+    // メッセージが存在しなければどちらも空になる。
+    @Query("SELECT m.channel.id FROM Message m WHERE m.id = :id")
+    Optional<Long> findChannelIdById(@Param("id") Long id);
+
+    @Query("SELECT m.dmRoom.id FROM Message m WHERE m.id = :id")
+    Optional<Long> findDmRoomIdById(@Param("id") Long id);
 
     @Query("""
             SELECT m FROM Message m
