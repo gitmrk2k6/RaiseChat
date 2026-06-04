@@ -62,6 +62,7 @@ erDiagram
     users ||--o{ mentions : "is_mentioned"
     users ||--o{ read_states : "tracks"
     users ||--o{ workspace_invites : "issues_invite"
+    users ||--o{ channel_invites : "issues_invite"
 
     workspaces ||--o{ workspace_members : "has"
     workspaces ||--o{ channels : "has"
@@ -69,6 +70,7 @@ erDiagram
     workspaces ||--o{ workspace_invites : "has"
 
     channels ||--o{ channel_members : "has"
+    channels ||--o{ channel_invites : "has"
     channels ||--o{ messages : "contains"
     channels ||--o{ read_states : "tracked_by"
 
@@ -155,7 +157,7 @@ erDiagram
         bigint dm_room_id FK "XOR with channel_id"
         bigint parent_message_id FK "self-ref, nullable"
         bigint author_user_id FK
-        text body "1-4000"
+        text body "0-4000"
         tsvector body_tsv "GENERATED"
         timestamptz edited_at "nullable"
         timestamptz created_at
@@ -207,6 +209,18 @@ erDiagram
     workspace_invites {
         bigint id PK
         bigint workspace_id FK
+        bigint invited_by_user_id FK
+        varchar token_hash "UNIQUE"
+        timestamptz expires_at
+        int max_uses "nullable"
+        int used_count "default 0"
+        timestamptz created_at
+        timestamptz revoked_at "nullable"
+    }
+
+    channel_invites {
+        bigint id PK
+        bigint channel_id FK
         bigint invited_by_user_id FK
         varchar token_hash "UNIQUE"
         timestamptz expires_at
@@ -419,7 +433,7 @@ erDiagram
 | `dm_room_id` | `BIGINT` | NULL | FK → `dm_rooms.id`（XOR） |
 | `parent_message_id` | `BIGINT` | NULL | FK → `messages.id`（自己参照、スレッド返信） |
 | `author_user_id` | `BIGINT` | NOT NULL | FK → `users.id`。投稿者退会後も author_user_id は CASCADE しない |
-| `body` | `TEXT` | NOT NULL | `CHECK (char_length(body) BETWEEN 1 AND 4000)` (F-05) |
+| `body` | `TEXT` | NOT NULL | `CHECK (char_length(body) <= 4000)` (F-05)。下限は `V3` で撤廃（file-only 添付のため空文字 `''` を許容） |
 | `body_tsv` | `tsvector` | NOT NULL | `GENERATED ALWAYS AS (to_tsvector('simple', body)) STORED` (F-13) |
 | `edited_at` | `TIMESTAMPTZ` | NULL | F-07「(編集済み)」マーク用 |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT `now()` | |
@@ -434,6 +448,7 @@ erDiagram
 - マークダウン（F-09）の本文は加工せず生のまま `body` に保存。レンダリングはフロントで `react-markdown` + `rehype-sanitize`。
 - F-07 の編集時、`body` を更新し `edited_at = now()` をセット。`body_tsv` は GENERATED COLUMN のため自動で再計算される。
 - 日本語形態素解析（`pgroonga` 等）は後続課題（拡張余地）。MVP は `simple` 辞書で部分一致と前方一致を行う。
+- **F-10 file-only 添付**（`V3`）: 本文長の下限 `1` を撤廃し、添付のみ（本文空文字）のメッセージを許可した。「本文か添付のどちらかは必須」は DB の CHECK では本文と添付（別テーブル）を相関できないため、アプリ層（`MessageController`）で担保する。
 
 ---
 
@@ -516,6 +531,30 @@ erDiagram
 
 ---
 
+### 3.15 `channel_invites` — チャンネル招待（F-15、`V2` で追加）
+
+`workspace_invites`（3.5）をミラーした構造。チャンネル単位の招待リンクで、発行はチャンネルメンバー、受諾は同一ワークスペースのメンバー。`V2__channel_invites.sql` で追加した。
+
+| カラム | 型 | NULL | 制約 / 補足 |
+| --- | --- | --- | --- |
+| `id` | `BIGINT` | NOT NULL | PK, IDENTITY |
+| `channel_id` | `BIGINT` | NOT NULL | FK → `channels.id`（ON DELETE CASCADE） |
+| `invited_by_user_id` | `BIGINT` | NOT NULL | FK → `users.id`（ON DELETE RESTRICT） |
+| `token_hash` | `VARCHAR(64)` | NOT NULL | UNIQUE, SHA-256 ハッシュ |
+| `expires_at` | `TIMESTAMPTZ` | NOT NULL | 期限付き（F-15） |
+| `max_uses` | `INT` | NULL | NULL=無制限、`1`=ワンタイム（F-15） |
+| `used_count` | `INT` | NOT NULL DEFAULT 0 | |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT `now()` | |
+| `revoked_at` | `TIMESTAMPTZ` | NULL | |
+
+**インデックス**:
+- `UNIQUE (token_hash)`
+- `(channel_id, expires_at)`
+
+**備考**: 平文トークンは生成時のみクライアントに返し、DB には `token_hash` のみ保存する（`workspace_invites` と同方針）。
+
+---
+
 ## 4. 主要な設計判断ポイント
 
 ### 4.1 DM の表現：独立テーブル
@@ -524,7 +563,7 @@ erDiagram
 
 **理由**:
 - `channels.type = DM` で統合する案は、`workspace_members` / `channel_members` と DM 参加者の概念が混ざる。DM には `description` も「退出」概念もないため、別概念は別テーブルが読みやすい
-- フロントのモック（[frontend/lib/mock/messages.ts](../frontend/lib/mock/messages.ts), [frontend/lib/mock/dms.ts](../frontend/lib/mock/dms.ts)）も `channelId` / `dmRoomId` を別フィールドで持っており、整合する
+- API レスポンス（`Message`）も `channelId` / `dmRoomId` を別フィールドで持っており、整合する
 - 学習プロジェクトとして「概念が違うものは別テーブル」の方が読みやすい
 
 ### 4.2 メッセージの統合：1 つの `messages` テーブル
@@ -731,8 +770,10 @@ CREATE UNIQUE INDEX idx_channels_workspace_name_lower
 - 管理者ユーザー（`admin` / 既知のパスワード）
 - デモワークスペース（"RaiseTech AI"）
 - `general` チャンネル（F-03 でワークスペース作成時に自動作成される既定チャンネル）
-- 数人のデモユーザー（フロント [frontend/lib/mock/users.ts](../frontend/lib/mock/users.ts) と一貫させる：`keisuke` / `haruka` / `ryo` / `mika` / `kenta`）
-- サンプルメッセージ数件（[frontend/lib/mock/messages.ts](../frontend/lib/mock/messages.ts) の内容を一部 SQL 化）
+- 数人のデモユーザー（`keisuke` / `haruka` / `ryo` / `mika` / `kenta`）
+- サンプルメッセージ数件
+
+> 実装済み: 上記は [`backend/src/main/resources/db/seed/R__seed_dev.sql`](../backend/src/main/resources/db/seed/R__seed_dev.sql)（`dev` プロファイルの repeatable migration）で投入する。
 
 ### 7.2 投入方針
 
@@ -748,11 +789,12 @@ CREATE UNIQUE INDEX idx_channels_workspace_name_lower
 
 ```
 backend/src/main/resources/db/migration/
-  V1__init_schema.sql             # 全テーブル + インデックス + トリガー
-  V2__add_xxx.sql                 # 機能追加時に新規ファイル
+  V1__init_schema.sql                  # 全テーブル + インデックス + トリガー
+  V2__channel_invites.sql              # F-15 チャンネル招待テーブルを追加
+  V3__relax_message_body_length.sql    # F-10 file-only 添付のため body 長下限を撤廃
   ...
 backend/src/main/resources/db/seed/
-  R__seed_dev.sql                 # 開発用シード（dev プロファイルのみ）
+  R__seed_dev.sql                      # 開発用シード（dev プロファイルのみ）
 ```
 
 ### 8.2 運用ルール

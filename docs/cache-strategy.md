@@ -408,7 +408,7 @@ API イベント / WebSocket イベントごとに、消す key を定義する�
 | チャンネル削除 | DEL | `cache:workspace:{wsId}:channels` / `cache:channel:{id}:*` を全削除 |
 | チャンネル参加 / 退出 | DEL | `cache:channel:{id}:members` |
 | **メッセージ送信** (WebSocket) | LPUSH + INCR | `cache:channel:{id}:recent` に追加 / 全メンバー（送信者除く）の `unread:user:*:channel:{id}` を INCR |
-| メッセージ編集 (`PUT /api/messages/{id}`) | （何もしない or 安全側で DEL） | `cache:channel:{id}:recent` は ID リストなので影響なし。本体キャッシュは MVP では存在しないので操作不要 |
+| メッセージ編集 (`PATCH /api/messages/{id}`) | （何もしない or 安全側で DEL） | `cache:channel:{id}:recent` は ID リストなので影響なし。本体キャッシュは MVP では存在しないので操作不要 |
 | メッセージ削除 (`DELETE /api/messages/{id}`) | （同上） | `cache:channel:{id}:recent` 上では論理削除済 ID が残るが、表示側で `deleted_at` を見るため OK |
 | 既読更新 (`POST /api/channels/{id}/read`) | SET 0 | `unread:user:{自分のid}:channel:{id}` を 0 |
 | ログアウト (`POST /api/auth/logout`) | SET | `jwt:blacklist:{jti}`（残り有効期間 TTL） |

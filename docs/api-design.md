@@ -7,7 +7,7 @@
 ## 0. はじめに
 
 本書は RaiseChat の **REST API エンドポイント仕様** を定義する。
-MVP 全機能（F-01〜F-16）の REST API について、URL・HTTP メソッド・リクエスト / レスポンス JSON スキーマ・認証要否・エラーパターンを確定させる（F-09 マークダウン・F-17 presence/typing はサーバー側 REST を持たないため対象外）。
+MVP 全機能（F-01〜F-16）の REST API について、URL・HTTP メソッド・リクエスト / レスポンス JSON スキーマ・認証要否・エラーパターンを確定させる（F-09 マークダウン・F-17 typing はサーバー側 REST を持たないため対象外。F-17 presence は初期状態取得用に `GET /api/presence` シードエンドポイントのみ持ち、状態変化は WS 配信）。
 WebSocket / STOMP のメッセージプロトコルは本書のスコープ外（[5.5](#55-チャンネルメッセージf-05-f-07) と [6](#6-websocket-との境界) で REST との分担のみ示し、詳細は [docs/realtime-design.md](realtime-design.md) で別途定義する）。
 
 ### 0.1 本書のスコープ
@@ -153,7 +153,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 | 1 | POST | `/api/auth/signup` | 不要 | F-01 ユーザー登録 |
 | 2 | POST | `/api/auth/login` | 不要 | F-01 ログイン |
 | 3 | POST | `/api/auth/refresh` | 不要（リフレッシュトークン必須） | F-01 アクセストークン再発行 |
-| 4 | POST | `/api/auth/logout` | 必要 | F-01 ログアウト |
+| 4 | POST | `/api/auth/logout` | 必要 | F-01 ログアウト（**仕様のみ・未実装**。[5.1.4](#514-post-apiauthlogout) 参照） |
 | 5 | GET | `/api/auth/me` | 必要 | F-01 自分のユーザー情報取得 |
 | 6 | PUT | `/api/users/me` | 必要 | F-02 プロフィール更新 |
 | 7 | POST | `/api/users/me/avatar` | 必要 | F-02 アバター画像アップロード |
@@ -167,7 +167,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 | 15 | POST | `/api/channels/{id}/leave` | 必要 | F-04 チャンネル退出 |
 | 16 | DELETE | `/api/channels/{id}` | 必要 | F-04 チャンネル削除 |
 | 17 | GET | `/api/channels/{id}/messages` | 必要 | F-05 チャンネルメッセージ履歴取得 |
-| 18 | PUT | `/api/messages/{id}` | 必要 | F-07 メッセージ編集 |
+| 18 | PATCH | `/api/messages/{id}` | 必要 | F-07 メッセージ編集 |
 | 19 | DELETE | `/api/messages/{id}` | 必要 | F-07 メッセージ削除 |
 | 20 | POST | `/api/workspaces/{wsId}/dm/rooms` | 必要 | F-06 DM ルーム作成 |
 | 21 | GET | `/api/workspaces/{wsId}/dm/rooms` | 必要 | F-06 DM ルーム一覧 |
@@ -185,6 +185,16 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 | 33 | GET | `/api/channels/{id}/members` | 必要（チャンネル閲覧可） | F-16 チャンネルメンバー一覧 |
 | 34 | POST | `/api/channels/{id}/members` | 必要（チャンネルメンバー） | F-16 チャンネルへメンバー直接追加 |
 | 35 | DELETE | `/api/channels/{id}/members/{userId}` | 必要（OWNER / 作成者） | F-16 チャンネルからメンバー削除（キック） |
+| 36 | POST | `/api/messages/{id}/reactions` | 必要 | F-11 リアクション付与（冪等。詳細 [5.10.1](#5101-post-apimessagesidreactions)） |
+| 37 | DELETE | `/api/messages/{id}/reactions/{emoji}` | 必要 | F-11 リアクション解除（[5.10.2](#5102-delete-apimessagesidreactionsemoji)） |
+| 38 | GET | `/api/workspaces/{wsId}/search` | 必要 | F-13 メッセージ検索（[5.12.1](#5121-get-apiworkspaceswsidsearch)） |
+| 39 | POST | `/api/messages/{id}/attachments` | 必要 | F-10 既存メッセージへの添付アップロード（[5.13.1](#5131-post-apimessagesidattachments)） |
+| 40 | GET | `/api/notifications/unread` | 必要 | F-14 未読サマリ取得（[5.14.1](#5141-get-apinotificationsunread)） |
+| 41 | POST | `/api/channels/{id}/read` | 必要 | F-14 チャンネル既読位置更新（[5.14.2](#5142-post-apichannelsidread--post-apidmroomsidread)） |
+| 42 | POST | `/api/dm/rooms/{id}/read` | 必要 | F-14 DM 既読位置更新（[5.14.2](#5142-post-apichannelsidread--post-apidmroomsidread)） |
+| 43 | DELETE | `/api/workspaces/{wsId}/members/{userId}` | 必要（OWNER） | F-16 ワークスペースからユーザーをキック（[5.15.1](#5151-delete-apiworkspaceswsidmembersuseridユーザーキック)） |
+| 44 | DELETE | `/api/workspaces/{wsId}` | 必要（OWNER） | F-16 ワークスペース削除（[5.15.3](#5153-delete-apiworkspaceswsidワークスペース削除)） |
+| 45 | GET | `/api/presence` | 必要 | F-17 オンラインユーザー一覧のシード取得（接続直後に 1 回。以降は WS で更新） |
 
 > **メッセージ送信について**: F-05 / F-06 の **新規メッセージ送信** は WebSocket（STOMP）経由が主であり、REST には用意しない。理由: クライアント・サーバー双方で配信経路を一本化することで、リアルタイム配信時のメッセージ重複・順序逆転を避けるため。スレッド返信（F-08）のみ MVP では REST も用意し、WebSocket 経路と並走させる検討余地を残す。詳細は [6. WebSocket との境界](#6-websocket-との境界) を参照。
 
@@ -657,7 +667,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 | パート | 制約 |
 | --- | --- |
-| `body` | 必須、1〜4000 文字（添付込み作成では本文必須） |
+| `body` | **任意**、最大 4000 文字。`files` が必須のため本文を省略しても「本文か添付のどちらかは必須」を満たす（file-only 添付。`V3` で下限を撤廃。本文なしは空文字として保存） |
 | `files` | 必須、1〜10 件。各ファイルの MIME / サイズ制約は [5.13.1](#5131-post-apimessagesidattachments) と同一（5 種 / 10 MB） |
 | `parentMessageId` | 任意。スレッド返信として添付込み投稿する場合に指定 |
 
@@ -669,9 +679,9 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
   - `401 Unauthorized` / `403 Forbidden` / `404 Not Found`
   - `413 Payload Too Large`: 10 MB 超過
   - `415 Unsupported Media Type`: 許可 MIME 以外
-  - `422 Unprocessable Entity`: 本文が空 / 4000 文字超 / ファイル 0 件 / 10 件超
+  - `422 Unprocessable Entity`: 4000 文字超 / ファイル 0 件 / 10 件超（本文は空でも可＝file-only）
 
-#### 5.5.2 PUT /api/messages/{id}
+#### 5.5.2 PATCH /api/messages/{id}
 
 - **目的**: メッセージ本文を編集（自分のメッセージのみ。F-07）
 - **認証**: 必要
@@ -755,7 +765,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 - **目的**: DM ルームへ本文＋ファイル添付を 1 リクエストで投稿する（multipart、チャンネル版 [5.5.1a](#551a-post-apichannelsidmessages添付込み作成--f-10) と同仕様）
 - **認証**: 必要（当該 DM ルームメンバーのみ）
-- **リクエスト**: `multipart/form-data`（`body` 必須 1〜4000 文字 / `files` 1〜10 件 / `parentMessageId` 任意）
+- **リクエスト**: `multipart/form-data`（`body` 任意・最大 4000 文字＝file-only 可 / `files` 必須 1〜10 件 / `parentMessageId` 任意）
 - **レスポンス** `201 Created`: 添付込みの `Message`
 - **エラー**: [5.5.1a](#551a-post-apichannelsidmessages添付込み作成--f-10) と同じ（401 / 403 / 404 / 413 / 415 / 422）
 
@@ -1202,7 +1212,7 @@ REST と WebSocket の責務分担を明示する。WebSocket メッセージプ
 
 ## 7. 機能別 API 一覧（実装状況）
 
-MVP の全機能（F-01〜F-16）の API を本書で定義済み。各機能の節へのリンク:
+MVP の全機能（F-01〜F-16）の REST API を本書で定義済み（F-17 は presence シードのみ REST、他は WS）。各機能の節へのリンク:
 
 | 機能 | エンドポイント / 節 | 状態 |
 | --- | --- | --- |
@@ -1221,6 +1231,7 @@ MVP の全機能（F-01〜F-16）の API を本書で定義済み。各機能の
 | F-14 通知 | [§5.14](#514-通知f-14) | ✅ 定義済 |
 | F-15 招待 | [§5.8](#58-ワークスペース招待f-15) / [§5.9](#59-チャンネル招待f-15) | ✅ 定義済 |
 | F-16 管理者操作 | [§5.15](#515-管理者操作f-16) | ✅ 定義済 |
+| F-17 presence / typing | `GET /api/presence`（シード、俯瞰表 #45）/ それ以外は WS（[realtime-design.md](realtime-design.md)） | ✅ presence シードのみ REST。状態変化・typing は WS |
 
 ---
 
@@ -1234,3 +1245,4 @@ MVP の全機能（F-01〜F-16）の API を本書で定義済み。各機能の
 | 2026-05-30 | F-11 絵文字リアクション API（§5.10）を実装。付与 201/200 冪等・解除 204 冪等、`WsEvent.payload` を `Object` 化してリアクションイベントを既存トピックへ配信 | #70 |
 | 2026-06-03 | 実装済だが本書未記載だった F-12 メンション（§5.11）/ F-13 検索（§5.12）/ F-10 添付（§5.13）/ F-14 通知（§5.14）/ F-16 管理者操作（§5.15）を実コードから追記。§7 を機能別 API 一覧に再構成し、本書のスコープを F-01〜F-16 に更新 | #149 |
 | 2026-06-04 | 後追い実装したエンドポイントを追記: 添付込みメッセージ作成 `POST /api/channels\|dm/rooms/{id}/messages`（multipart、§5.5.1a / §5.6.4）、チャンネルメンバー管理 `GET/POST /api/channels/{id}/members`・`DELETE …/{userId}`（§5.4.7〜5.4.9）。直接追加の `CHANNEL_ADDED` WS 通知（キックの `CHANNEL_REMOVED` と対称）を §6.1 に追記 | #175 |
+| 2026-06-04 | 実装との整合点検: メッセージ編集を `PUT`→`PATCH` に修正（実装は `@PatchMapping`）、添付込み作成の `body` を「必須」→「任意（file-only 可、`V3`）」に修正、俯瞰表に未掲載だった #36〜45（リアクション / 検索 / 添付 / 通知 / 既読 / WS キック / WS 削除 / presence シード）を追加、logout(#4)を未実装と明記、F-17 presence の `GET /api/presence` シードをスコープ注記に反映 | — |

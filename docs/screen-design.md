@@ -557,7 +557,7 @@ S-06 / S-07 / S-08 はすべて以下の共通レイアウト（3 ペイン + To
 | 履歴取得 | `GET /api/channels/{id}/messages?cursor=...&limit=50` | [D-1 §5.5.1](api-design.md#551-get-apichannelsidmessages) |
 | 新規送信 | WebSocket `/app/channels/{id}/messages` | [D-2 §6.2](realtime-design.md) |
 | リアルタイム受信 | WebSocket subscribe `/topic/channels/{id}` | [D-2 §4.2](realtime-design.md) |
-| 編集 | `PUT /api/messages/{id}` | [D-1 §5.5.2](api-design.md#552-put-apimessagesid) |
+| 編集 | `PATCH /api/messages/{id}` | [D-1 §5.5.2](api-design.md#552-patch-apimessagesid) |
 | 削除 | `DELETE /api/messages/{id}`（確認ダイアログ [M-04](#6-モーダル--ダイアログ一覧)） | [D-1 §5.5.3](api-design.md#553-delete-apimessagesid) |
 | 既読更新 | `POST /api/channels/{id}/read`（F-14 追補） | — |
 
@@ -569,7 +569,7 @@ S-06 / S-07 / S-08 はすべて以下の共通レイアウト（3 ペイン + To
 | composer 送信 | WebSocket SEND → 配信される `message.created` で自分の画面にも反映 |
 | メッセージクリック | 右ペインにスレッドビュー（[5.8](#58-スレッドビュー右ペインf-08)）を開く |
 | 自分のメッセージのホバー | 編集 / 削除ボタン表示 |
-| 編集確定 | `PUT /api/messages/{id}` → 自分の画面で即更新、他クライアントは WebSocket イベントで反映 |
+| 編集確定 | `PATCH /api/messages/{id}` → 自分の画面で即更新、他クライアントは WebSocket イベントで反映 |
 | 削除確定 | [M-04 削除確認](#6-モーダル--ダイアログ一覧) → `DELETE /api/messages/{id}` |
 
 ### 5.7 S-07 DM ビュー `/workspaces/{wsId}/dm/{id}`（F-06, F-07, F-08）
@@ -608,7 +608,7 @@ S-06 と同じ 3 ペイン共通レイアウト上で、main の中身を DM 専
 | 履歴取得 | `GET /api/dm/rooms/{id}/messages` | [D-1 §5.6.3](api-design.md#563-get-apidmroomsidmessages) |
 | 新規送信 | WebSocket `/app/dm/{roomId}/messages` | [D-2](realtime-design.md) |
 | 受信 | WebSocket subscribe `/topic/dm/{roomId}` | [D-2 §4.2](realtime-design.md) |
-| 編集 / 削除 | S-06 と同じ（メッセージ ID で操作） | [D-1 §5.5.2 / 5.5.3](api-design.md#552-put-apimessagesid) |
+| 編集 / 削除 | S-06 と同じ（メッセージ ID で操作） | [D-1 §5.5.2 / 5.5.3](api-design.md#552-patch-apimessagesid) |
 
 ### 5.8 スレッドビュー（右ペイン）（F-08）
 
