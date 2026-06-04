@@ -18,8 +18,11 @@
 #   CD に専用のマイグレーションステップは設けない。
 #
 # 【実行方針】infra が未 apply の間（ECS クラスタ未作成）は走らせると失敗する。
-#   apply 前は無効運用とし、apply 後に main への push で自動デプロイを運用に乗せる。
-#   任意のタイミングで動かすときは workflow_dispatch（手動）で対象を選んで起動する。
+#   そのため detect ジョブに `if: vars.AWS_DEPLOY_ROLE_ARN != ''` のガードを置き、
+#   ロール ARN（＝apply 後に設定する変数）が無い間はワークフローを skip する。
+#   apply 後にリポジトリ変数 AWS_DEPLOY_ROLE_ARN を設定すれば自動デプロイが有効になる。
+#   任意のタイミングで動かすときは workflow_dispatch（手動）で対象を選んで起動する
+#   （手動起動でも変数未設定なら skip される）。
 
 name: Deploy to AWS (ECR / ECS)
 
@@ -55,7 +58,14 @@ env:
 jobs:
   # push の paths はワークフロー起動条件であってジョブ単位ではないため、
   # 変更のあったサービスだけを出し分ける判定をここで作る。手動起動時は入力で決める。
+  #
+  # 【ガード】リポジトリ変数 AWS_DEPLOY_ROLE_ARN が未設定なら何もしない（skip）。
+  #   author-only 運用で AWS 未 apply の間はこの変数が空のため、OIDC の assume が
+  #   必ず失敗する。detect を skip すれば needs: detect の backend/frontend も skip され、
+  #   main push が「失敗（赤×）」ではなく「スキップ」になる。apply 後に変数を設定すれば
+  #   従来どおり自動デプロイが復活する（＝変数の有無が自動デプロイの ON/OFF）。
   detect:
+    if: vars.AWS_DEPLOY_ROLE_ARN != ''
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.decide.outputs.backend }}
