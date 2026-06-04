@@ -20,7 +20,7 @@ Slack 風チャット Web アプリケーション。RaiseTech AI エンジニ�
 | [docs/functional-requirements.md](docs/functional-requirements.md) | 機能要件書。F-01〜F-17 の機能定義・バリデーション・ユースケース |
 | [docs/why-slack.md](docs/why-slack.md) | 「Slack 風」発注意図の解釈と競合比較・スコープ判断の根拠 |
 | [docs/screen-design.md](docs/screen-design.md) | 画面設計書。画面一覧・ワイヤーフレーム・画面遷移図 |
-| [docs/database-design.md](docs/database-design.md) | データベース設計書。14 テーブル定義・Flyway 運用ルール・docker-compose 構成方針 |
+| [docs/database-design.md](docs/database-design.md) | データベース設計書。15 テーブル定義・Flyway 運用ルール・docker-compose 構成方針 |
 | [docs/api-design.md](docs/api-design.md) | API 設計書。REST エンドポイント・リクエスト / レスポンス仕様 |
 | [docs/tech-stack.md](docs/tech-stack.md) | 技術スタック詳細。採用技術・バージョン一覧 |
 | [docs/infrastructure.md](docs/infrastructure.md) | インフラ構成。AWS 構成図・ネットワーク・冗長化・CI/CD・Ansible |
@@ -132,14 +132,14 @@ npm run dev
 `./gradlew bootRun` の起動ログに以下が出ていれば Flyway が成功している:
 
 ```text
-Successfully applied 1 migration to schema "public", now at version v1
+Successfully applied 3 migrations to schema "public", now at version v3
 ```
 
 実テーブルの確認:
 
 ```bash
 docker compose exec postgres psql -U raisechat -d raisechat -c "\dt"
-# → 14 テーブル + flyway_schema_history = 15 行
+# → 15 テーブル + flyway_schema_history = 16 行
 ```
 
 ### 停止

@@ -269,7 +269,7 @@ WebSocket で流す JSON はすべて **同じ封筒（envelope）** に入れ�
 | `type` | 配信される destination | 発火タイミング |
 | --- | --- | --- |
 | `message.created` | `/topic/channels/{id}` / `/topic/dm/{id}` / `/topic/threads/{id}` | 新規メッセージ受信時 |
-| `message.updated` | 同上 | REST `PUT /api/messages/{id}` 成功時 |
+| `message.updated` | 同上 | REST `PATCH /api/messages/{id}` 成功時 |
 | `message.deleted` | 同上 | REST `DELETE /api/messages/{id}` 成功時 |
 | `reaction.added` | 同上 | REST `POST /api/messages/{id}/reactions` 成功時 |
 | `reaction.removed` | 同上 | REST `DELETE /api/messages/{id}/reactions/{emoji}` 成功時 |
@@ -283,6 +283,13 @@ WebSocket で流す JSON はすべて **同じ封筒（envelope）** に入れ�
 ---
 
 ## 6. ペイロード詳細
+
+> **実装との差分（重要）**: 本章および §4.2 の JSON 例・イベント名は設計時の論理スキーマ。実装された実際のワイヤフォーマットは以下の点で異なる。正準は [api-design.md §6.1](api-design.md#61-websocket-destination-の現状規約参考) と、バックエンドの `WsEvent` / `NotificationEvent` の enum。
+>
+> - **`type` は enum 名の大文字スネーク**で送る: `message.created`→`MESSAGE_CREATED`、`message.updated`→**`MESSAGE_EDITED`**、`message.deleted`→`MESSAGE_DELETED`、`reaction.added`/`reaction.removed`→`REACTION_ADDED`/`REACTION_REMOVED`。個人宛キューはメンバーシップ系 `WORKSPACE_REMOVED` / `CHANNEL_REMOVED` / `CHANNEL_ADDED`、未読系 `UNREAD_UPDATED` / `UNREAD_CLEARED`。
+> - **配信エンベロープは `{ type, payload }` のみ**（`serverTime` フィールドは実装していない）。
+> - **クライアント送信ボディは `{ body, parentMessageId }`**（`clientMessageId` は実装していない。楽観的 UI の確定は WS 受信で行う）。
+> - **添付込みメッセージ作成は STOMP ではなく REST multipart**（[api-design.md §5.5.1a / §5.6.4](api-design.md)）。本文なしの file-only 添付も可。
 
 ### 6.1 `message.created`
 

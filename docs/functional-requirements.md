@@ -61,10 +61,10 @@
 
 **関連エンドポイント（仮）**
 
-- `POST /api/auth/register`
+- `POST /api/auth/signup`
 - `POST /api/auth/login`
 - `POST /api/auth/refresh`
-- `POST /api/auth/logout`
+- `POST /api/auth/logout`（仕様のみ・未実装。[api-design.md §5.1.4](api-design.md#514-post-apiauthlogout)）
 
 ---
 
@@ -85,7 +85,7 @@
 
 **関連エンドポイント（仮）**
 
-- `GET /api/users/me`
+- `GET /api/auth/me`（現在のユーザー情報取得）
 - `PUT /api/users/me`
 - `POST /api/users/me/avatar`
 
@@ -188,7 +188,7 @@
 
 **関連エンドポイント / WebSocket destination（仮）**
 
-- `POST /api/dm/rooms` (相手ユーザー ID を指定)
+- `POST /api/workspaces/{wsId}/dm/rooms` (相手ユーザー ID を指定)
 - `GET /api/dm/rooms/{id}/messages?cursor=...`
 - WebSocket subscribe: `/topic/dm/{roomId}`
 - WebSocket send: `/app/dm/{roomId}/messages`
@@ -213,7 +213,7 @@
 
 **関連エンドポイント（仮）**
 
-- `PUT /api/messages/{id}`
+- `PATCH /api/messages/{id}`
 - `DELETE /api/messages/{id}`
 
 ---
@@ -277,8 +277,8 @@
 
 **関連エンドポイント（仮）**
 
-- `POST /api/attachments`
-- `GET /api/attachments/{id}`
+- `POST /api/messages/{id}/attachments`（既存メッセージへ添付）／ 添付込み新規投稿は `POST /api/channels|dm/rooms/{id}/messages`（multipart）
+- 添付のダウンロードは専用エンドポイントを設けず、メッセージ取得時に返る S3 URL を直接参照
 
 ---
 
