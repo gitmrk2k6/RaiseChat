@@ -170,8 +170,25 @@ terraform apply -var-file=dev.tfvars     # ★ ここから本格的に課金が
 ```bash
 terraform output                          # 主要な出力を一覧
 ALB=$(terraform output -raw alb_dns_name)
-curl -i "http://$ALB/actuator/health"     # backend ヘルス（{"status":"UP"} 期待）
-curl -i "http://$ALB/"                     # フロント（Next.js）が返るか
+curl -i "http://$ALB/"                     # フロント（Next.js）が 200 を返すか
+
+# backend ヘルスは ALB 経由の curl では確認できない。
+# ALB は /api/* と /ws・/ws/* だけを backend に振り、それ以外（/actuator/* を含む）は
+# default のフロントに流すため `curl http://$ALB/actuator/health` は Next.js の 404 になる。
+# backend は「ECS タスクの稼働数」と「ターゲットグループのヘルス」で確認する。
+CLUSTER=$(terraform output -raw ecs_cluster_name)
+SVC=$(terraform output -raw ecs_service_name)
+
+# タスクが desired 数だけ RUNNING になっているか
+aws ecs describe-services --cluster "$CLUSTER" --services "$SVC" \
+  --query 'services[0].{running:runningCount,desired:desiredCount}'
+
+# ターゲットグループのヘルス（TG は backend の 8080 に直接 /actuator/health を打つので、
+# state が healthy なら backend は {"status":"UP"} を返せている）
+TG=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SVC" \
+  --query 'services[0].loadBalancers[0].targetGroupArn' --output text)
+aws elbv2 describe-target-health --target-group-arn "$TG" \
+  --query 'TargetHealthDescriptions[].TargetHealth.State'   # すべて "healthy" 期待
 ```
 
 - タスクが上がらない場合は §7 のトラブルシュートと §4 の CloudWatch Logs を見る。
