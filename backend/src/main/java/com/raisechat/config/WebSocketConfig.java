@@ -1,6 +1,7 @@
 package com.raisechat.config;
 
 import com.raisechat.message.ws.JwtChannelInterceptor;
+import com.raisechat.message.ws.SubscriptionAuthorizationInterceptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
@@ -14,12 +15,15 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final JwtChannelInterceptor jwtChannelInterceptor;
+    private final SubscriptionAuthorizationInterceptor subscriptionAuthorizationInterceptor;
 
     @Value("${app.ws.allowed-origins:http://localhost:3000}")
     private String allowedOrigins;
 
-    public WebSocketConfig(JwtChannelInterceptor jwtChannelInterceptor) {
+    public WebSocketConfig(JwtChannelInterceptor jwtChannelInterceptor,
+                           SubscriptionAuthorizationInterceptor subscriptionAuthorizationInterceptor) {
         this.jwtChannelInterceptor = jwtChannelInterceptor;
+        this.subscriptionAuthorizationInterceptor = subscriptionAuthorizationInterceptor;
     }
 
     @Override
@@ -40,6 +44,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        registration.interceptors(jwtChannelInterceptor);
+        // 順序が重要: 先に CONNECT で認証（セッションに user を紐づけ）、続いて SUBSCRIBE の認可を判定する。
+        registration.interceptors(jwtChannelInterceptor, subscriptionAuthorizationInterceptor);
     }
 }
