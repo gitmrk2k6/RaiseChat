@@ -4,13 +4,17 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Search, HelpCircle, Bell } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
-import { currentUserId, getUser } from "@/lib/mock/users";
+import { useAuth } from "@/lib/auth/AuthContext";
+import { avatarColorFor } from "@/lib/api/messages";
 import { ProfileModal } from "@/components/modals/ProfileModal";
 
 export function TopBar() {
   const params = useParams<{ workspaceId: string }>();
   const router = useRouter();
-  const me = getUser(currentUserId);
+  const { user } = useAuth();
+  // 表示名・アバター色はログイン中の本人（MeResponse）から。色は id から決定論的に補完する。
+  const meName = user?.displayName ?? "?";
+  const meColor = user ? avatarColorFor(String(user.id)) : "#6B7280";
 
   const [q, setQ] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
@@ -50,7 +54,7 @@ export function TopBar() {
           className="ml-1"
           title="プロフィール"
         >
-          <Avatar name={me.displayName} color={me.avatarColor} size="sm" />
+          <Avatar name={meName} color={meColor} size="sm" />
         </button>
       </header>
 

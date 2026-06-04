@@ -1,8 +1,12 @@
 "use client";
 
 import { useState, useRef, KeyboardEvent, ChangeEvent } from "react";
+import { useParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { Bold, Italic, Code, List, Paperclip, AtSign, Smile, Send, X, FileText } from "lucide-react";
-import { users, currentUserId } from "@/lib/mock/users";
+import { getWorkspaceMembers } from "@/lib/api/workspaces";
+import { queryKeys } from "@/lib/api/queryKeys";
+import { useAuth } from "@/lib/auth/AuthContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmojiPickerPopover } from "@/components/chat/EmojiPickerPopover";
 
@@ -24,6 +28,18 @@ interface Props {
 }
 
 export function MessageInput({ placeholder, onSend, onSendFiles, onTyping }: Props) {
+  // @メンション候補は実ワークスペースメンバー（GET /api/workspaces/{id}）から。
+  // ハンドルは backend の MentionService が抽出する userId に合わせる。
+  const params = useParams<{ workspaceId: string }>();
+  const workspaceId = params.workspaceId;
+  const { user } = useAuth();
+  const { data: members = [] } = useQuery({
+    queryKey: queryKeys.workspaceMembers(workspaceId),
+    queryFn: () => getWorkspaceMembers(workspaceId),
+    enabled: !!workspaceId,
+    staleTime: 30_000,
+  });
+
   const [value, setValue] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [showEmoji, setShowEmoji] = useState(false);
@@ -52,8 +68,8 @@ export function MessageInput({ placeholder, onSend, onSendFiles, onTyping }: Pro
     setTimeout(() => ta.focus(), 0);
   };
 
-  const pickMention = (username: string) => {
-    const next = value.replace(/@(\w*)$/, `@${username} `);
+  const pickMention = (userId: string) => {
+    const next = value.replace(/@(\w*)$/, `@${userId} `);
     setValue(next);
     setMentionQuery(null);
     textareaRef.current?.focus();
@@ -122,14 +138,15 @@ export function MessageInput({ placeholder, onSend, onSendFiles, onTyping }: Pro
     }
   };
 
+  const meUserId = user?.userId ?? null;
   const suggestions =
     mentionQuery !== null
-      ? users
+      ? members
           .filter(
-            (u) =>
-              u.id !== currentUserId &&
+            (m) =>
+              m.userId !== meUserId &&
               (mentionQuery === "" ||
-                u.username.toLowerCase().startsWith(mentionQuery.toLowerCase())),
+                m.userId.toLowerCase().startsWith(mentionQuery.toLowerCase())),
           )
           .slice(0, 5)
       : [];
@@ -148,15 +165,15 @@ export function MessageInput({ placeholder, onSend, onSendFiles, onTyping }: Pro
           <div className="px-3 py-1.5 text-xs font-bold text-gray-500 border-b bg-gray-50">
             メンバー候補
           </div>
-          {suggestions.map((u) => (
+          {suggestions.map((m) => (
             <button
-              key={u.id}
-              onClick={() => pickMention(u.username)}
+              key={m.id}
+              onClick={() => pickMention(m.userId)}
               className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-100 text-sm text-left"
             >
-              <Avatar name={u.displayName} color={u.avatarColor} size="xs" />
-              <span className="font-semibold">@{u.username}</span>
-              <span className="text-gray-500 text-xs">{u.displayName}</span>
+              <Avatar name={m.displayName} color={m.avatarColor} size="xs" />
+              <span className="font-semibold">@{m.userId}</span>
+              <span className="text-gray-500 text-xs">{m.displayName}</span>
             </button>
           ))}
         </div>
