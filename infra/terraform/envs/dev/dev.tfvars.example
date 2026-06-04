@@ -36,6 +36,10 @@ ecs_task_memory   = 1024
 # S3 バケット名・公開 URL は modules/storage が自動命名（${name_prefix}-storage-<account_id>）。tfvars 指定不要。
 # 単一 ALB の同一オリジン配信なら CORS は不要。別オリジンにする場合のみフロントのドメインを渡す。
 ws_allowed_origins = ""
+# 招待リンク（F-15）のベース URL。空だとアプリ既定 http://localhost:3000/invite になり、
+# 発行されるリンクが本番で開けない。本 apply 後に ALB DNS を確認し、
+# invite_base_url = "http://<alb_dns_name>/invite"（HTTPS 運用なら https）を設定して再 apply する。
+# 受諾ページはフロントの /invite/[token] が処理する。
 invite_base_url    = ""
 
 # --- フロント（Step 5 / ECS ホスト・単一 ALB パスルーティング）---

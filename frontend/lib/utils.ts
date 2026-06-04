@@ -22,3 +22,14 @@ export function formatDayLabel(iso: string): string {
 export function dayKey(iso: string): string {
   return format(new Date(iso), "yyyy-MM-dd");
 }
+
+/**
+ * ログイン/サインアップ後のリダイレクト先（?next=）を安全に解決する。
+ * オープンリダイレクト対策として、アプリ内の相対パス（"/foo"）のみ許可し、
+ * "//host" や "http://..." などの外部 URL は fallback に倒す。
+ */
+export function safeNextPath(next: string | null, fallback: string): string {
+  if (!next) return fallback;
+  if (!next.startsWith("/") || next.startsWith("//")) return fallback;
+  return next;
+}
