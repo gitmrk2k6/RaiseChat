@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { notFound, useSearchParams } from "next/navigation";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { getChannel as getMockChannel } from "@/lib/mock/channels";
 import { getChannel as fetchChannel } from "@/lib/api/channels";
 import {
   addReaction,
@@ -60,14 +59,12 @@ export default function ChannelPage({ params }: { params: { channelId: string } 
     void markChannelRead(params.channelId).catch(() => {});
   }, [params.channelId, channelUnread]);
 
-  // チャンネルのメタは mock を優先。mock に無い（＝実 API のチャンネル）場合はヘッダ用に実 API から取得する。
-  const mockChannel = getMockChannel(params.channelId);
-  const { data: apiChannel, isLoading: channelLoading } = useQuery({
+  // チャンネルのメタ（ヘッダ用）は実 API から取得する。
+  const { data: channel, isLoading: channelLoading } = useQuery({
     queryKey: queryKeys.channel(params.channelId),
     queryFn: () => fetchChannel(params.channelId),
-    enabled: !mockChannel,
+    enabled: !!params.channelId,
   });
-  const channel = mockChannel ?? apiChannel;
 
   // メッセージ履歴（実 API、cursor 無限スクロール）。API は createdAt 降順で返すので表示は昇順へ並べ替える。
   const {

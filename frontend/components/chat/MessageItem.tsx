@@ -6,7 +6,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ReactionBar } from "./ReactionBar";
 import type { Message } from "@/types";
-import { getUser } from "@/lib/mock/users";
+import { avatarColorFor } from "@/lib/api/messages";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { formatMessageTime } from "@/lib/utils";
 
@@ -31,12 +31,11 @@ export function MessageItem({
   compact,
   highlighted,
 }: Props) {
-  // 実 API メッセージは message.author（displayName / 派生 avatarColor）を優先。
-  // mock メッセージは author 未設定なので getUser(authorId) にフォールバックする。
-  const fallback = getUser(message.authorId);
+  // 実 API メッセージは message.author（displayName / 派生 avatarColor）を持つ。
+  // 念のため未設定でも色は authorId から決定論的に補完する。
   const author = {
-    displayName: message.author?.displayName ?? fallback.displayName,
-    avatarColor: message.author?.avatarColor ?? fallback.avatarColor,
+    displayName: message.author?.displayName ?? "?",
+    avatarColor: message.author?.avatarColor ?? avatarColorFor(message.authorId),
   };
   const { user } = useAuth();
   const meId = user ? String(user.id) : null;
@@ -152,18 +151,15 @@ export function MessageItem({
               className="mt-1.5 inline-flex items-center gap-2 px-2 py-1 rounded hover:bg-white hover:border hover:shadow-sm border border-transparent transition"
             >
               <div className="flex -space-x-1">
-                {message.threadParticipantIds.slice(0, 3).map((id) => {
-                  const u = getUser(id);
-                  return (
-                    <Avatar
-                      key={id}
-                      name={u.displayName}
-                      color={u.avatarColor}
-                      size="xs"
-                      className="ring-2 ring-white"
-                    />
-                  );
-                })}
+                {message.threadParticipantIds.slice(0, 3).map((id) => (
+                  <Avatar
+                    key={id}
+                    name="?"
+                    color={avatarColorFor(String(id))}
+                    size="xs"
+                    className="ring-2 ring-white"
+                  />
+                ))}
               </div>
               <span className="text-xs font-bold text-blue-700">
                 {message.threadReplyCount}件の返信

@@ -6,7 +6,6 @@ import { Hash, Lock, Star, Info, UserPlus, UserMinus } from "lucide-react";
 import type { Channel } from "@/types";
 import { Avatar } from "@/components/ui/Avatar";
 import { usePresence } from "@/lib/presence/PresenceContext";
-import { getUser } from "@/lib/mock/users";
 import { getChannelMembers } from "@/lib/api/channels";
 import { queryKeys } from "@/lib/api/queryKeys";
 import { InviteUserModal } from "@/components/modals/InviteUserModal";
@@ -18,34 +17,20 @@ export function ChannelHeader({ channel }: { channel: Channel }) {
   const { isOnline } = usePresence();
 
   // メンバー数バッジは実 API（GET /api/channels/{id}/members）の実数を正とする。
-  // mock チャンネル（実 API に存在しない）では 404 になりうるので、その場合は
-  // 取得失敗時のフォールバックとして channel.memberIds（mock）を使う。404 を retry しない。
-  const { data: apiMembers } = useQuery({
+  const { data: apiMembers = [] } = useQuery({
     queryKey: queryKeys.channelMembers(channel.id),
     queryFn: () => getChannelMembers(channel.id),
     enabled: !!channel.id,
-    retry: false,
     staleTime: 30_000,
   });
 
   // 表示用に { id, displayName, color, online } の共通形へ正規化する。
-  // 実 API が取れていればそれを優先、ダメなら mock の memberIds + getUser で補完。
-  const memberViews = apiMembers
-    ? apiMembers.map((m) => ({
-        id: m.id,
-        displayName: m.displayName,
-        color: m.avatarColor,
-        online: isOnline(m.id),
-      }))
-    : channel.memberIds.map((id) => {
-        const u = getUser(id);
-        return {
-          id: String(id),
-          displayName: u.displayName,
-          color: u.avatarColor,
-          online: isOnline(String(id)),
-        };
-      });
+  const memberViews = apiMembers.map((m) => ({
+    id: m.id,
+    displayName: m.displayName,
+    color: m.avatarColor,
+    online: isOnline(m.id),
+  }));
   const memberCount = memberViews.length;
 
   return (
