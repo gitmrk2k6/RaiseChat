@@ -17,7 +17,7 @@ import type {
 } from "./types";
 import type { Attachment, Message } from "@/types";
 
-// mock の配色（lib/mock/users.ts）と同系統のパレット。authorId から決定論的に 1 色選ぶ。
+// アバターの配色パレット。authorId から決定論的に 1 色選ぶ。
 const AVATAR_PALETTE = [
   "#4F46E5",
   "#0EA5E9",
